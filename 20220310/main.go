@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	testUnchangable()
+	testChangable()
 }
 
 func test1() {
