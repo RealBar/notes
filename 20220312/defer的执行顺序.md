@@ -29,7 +29,12 @@ func testDeferSeq2() (res int) {
 ```
 6
 ```
-另外，defer之后的代码如果发生panic，defer能**确保被执行**
+另外，defer之后的代码如果发生panic，defer能**确保被执行**，但是如果panic发生在defer之前，则不能被保证。
 ```go
-
+func testDeferPanic(){
+	defer func(){
+		
+	}()
+	panic("aaa")
+}
 ```
