@@ -8,7 +8,10 @@
 - apt-get autoremove/autoclean/remove/purge: 删除为了没有必要的依赖软件/删除本地没用的软件包文件/删除软件/删除软件并删除配置文件
 
 ### apt-cache
-
+- show: 查看所有版本的基础信息
+- showpkg: 
+- depends
+- rdepends
 ### apt添加源
 先添加key  
  ```
@@ -42,3 +45,4 @@ deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-arch
 - -L package_name: 显示包所包含的全部文件安装路径
 - -S file: 显示某个文件属于哪个包
 - --print-architecture: 显示当前cpu架构，64位为amd64（注意区别于uname -m的结果x86_64）
+- -P/-r purge/remove 区别是purge删除配置文件
