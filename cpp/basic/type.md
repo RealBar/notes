@@ -140,10 +140,20 @@ b = 3; // 报错
 
 int compute(const TreeNode &a, const TreeNode &b){...} // 函数内无法修改传入参数的值，包括成员变量
 ```
+const 引用甚至可以绑定到表达式，甚至可以发生类型转化
+```cpp
+double a = 1.2;
+const int &b = a; // 这里发生了类型转换
+```
+> 为什么const绑定可以这么灵活？因为**const 引用绑定到非const对象**时，编译器内部会生成一个临时变量，const引用实际上是绑定到这个临时变量的
+```cpp
+const int tmp = a;
+const int &b = tmp;
+```
 
-> 对于复合对象的引用，如果被声明为const，则只能调用const方法
+> 对于class，如果被声明为const，则只能调用const方法
 
-const 函数和方法
+const 方法
 
 ```cpp
 
