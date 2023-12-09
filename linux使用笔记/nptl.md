@@ -50,7 +50,7 @@ FYI, getpid() returns tgid:
  ```
 总结：
 1. 每个线程都有不同的pid，内核根据pid进行调度
-2. NPTL创建的线程和原线程有相同的tgid；fork创建的进程pid，tgid都不同
+2. NPTL创建的线程和原线程有相同的tgid；fork创建的进程pid、tgid都不同
 3. 对于进程的第一个线程，pid=tgid
 4. getpid返回的实际上是tgid
 5. gettid返回的实际上是真正的内核pid

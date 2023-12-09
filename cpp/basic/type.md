@@ -161,8 +161,3 @@ int max(const std::string &a, const std::string &b) const {
 	...
 }
 ```
-
-
-
-
-
