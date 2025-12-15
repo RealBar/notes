@@ -22,15 +22,14 @@
 >The optimal parameter $\theta^*$ is the one that maximizes the probability of generating real data samples:
 $\theta^{*} = \displaystyle \arg\max_\theta \sum_{i=1}^n \log p_\theta(\mathbf{x}^{(i)})$，其中$p_\theta(\mathbf{x}^{(i)}) = \int p_\theta(\mathbf{x}^{(i)}\vert\mathbf{z}) p_\theta(\mathbf{z}) d\mathbf{z}$
 Unfortunately it is not easy to compute $p_\theta(\mathbf{x}^{(i)})$ in this way, as it is very expensive to check all the possible values of $\mathbf z$ and sum them up. To narrow down the value space to facilitate faster search, we would like to introduce a new approximation function to output what is a likely code given an input $\mathbf x$, $q_\phi(\mathbf{z}\vert\mathbf{x})$ parameterized by $\phi$.
-![翁立莲的博客图片](https://lilianweng.github.io/posts/2018-08-12-vae/VAE-graphical-model.png)
+![翁立莲的博客图片](wenglilian_vae_process.png)
 
 个人感觉这里解释也不是很详细，所以作一下展开：
-
-简单说，我们无法在同一个模型（神经网络）上同时计算后验$p_{\theta}(\bm z|\bm x)$和似然$p_{\theta}(\bm x|\bm z)$，理由在上边第一个问题的回答里已经说过了。于是另开了一个模型$q_\phi(\bm z|\bm x)$，它的参数为$\phi$，用它来近似$p_{\theta}(\bm z|\bm x)$。
-
+简单说，我们无法在同一个模型（神经网络）上同时计算后验$p_{\theta}(\bm z|\bm x)$和似然$p_{\theta}(\bm x|\bm z)$，理由在上边第一个问题的回答里已经说过了。于是另开了一个模型$q_\phi(\bm z|\bm x)$称为encoder，它的参数为$\phi$，用它来近似$p_{\theta}(\bm z|\bm x)$。
+作者在这里套用了AE的概念，把$q_\phi(\bm z|\bm x)$称为encoder，把$p_{\theta}(\bm x|\bm z)$称为decoder。
 那么现在的问题来了，这里有两个模型，我们要怎么训练呢？
 
-## 证据下界
+## 证据下界(evidence lower bound, ELBO)
 $\log p_\theta(x)$的证据下界(ELBO)
 ```math
 \mathcal{L}=-D_{KL}(q_{\phi}(\bm z|\bm x^{(i)})||p_{\theta}(\bm z))+\Bbb E_{q_{\phi}(\bm z|\bm x^{(i)})}[\log p_{\theta}(\bm x^{(i)}|\bm z)]
@@ -64,4 +63,16 @@ D_{KL}(q(\bm z|\bm x)||p(\bm z|\bm x))=\Bbb E_{z\sim q}[\log q(\bm z|\bm x)-\log
 > 
 > VAE的目标是最大化$\log p_\theta(x)$，而这里的$p_\theta(x)$就是证据，因为x表示的是显性数据。根据上边的推导，它的下界就是证据下界。
 
-## 
+## 损失函数
+上边得到的ELBO是根据散度定义和贝叶斯定理推导而来的，是一个通用规则。我们的目的是最大化$\log p_\theta(\bm x)$，等价于求它上限的最大化，即求
+$\theta^*=\displaystyle \argmax _\theta ELBO$
+我们习惯于将损失函数定义为一个求最小的函数，因此
+$\theta^*=\displaystyle \argmin _\theta -ELBO$
+所以损失函数为
+$L=D_{KL}(q_\phi(\bm z|\bm x)||p_\theta(\bm z)) + \Bbb E_{z\sim q_\phi}[-\log p_\theta(\bm x|\bm z)]$
+第一项称为正则项，第二项称为重构误差。
+> 为什么KL散度是正则项？苏剑林的博客有说：每个输入的数据都会产生一个独立的正态分布（均值和方差），重参数化后即加入了基于这个方差的噪声进行训练。训练过程肯定会逐渐让噪声归零，也就是会让方差趋近于0，这其实就回到了AE。为了避免这这种情况，我们需要加一个正则，让方差趋近于1，即让$q_\phi$去逼近标准正态分布，即上边的KL散度项（P(z)是标准正态分布）。
+> ![苏剑林的vae结构](vae_struct.png)
+
+有视频说，VAE的损失函数其实就是这两个项之间的博弈：一方面，重构项缩小就要求噪声尽量低，就会让encoder输出的方差减少到0；而另一方面正则项要缩小就要求encoder输出的方差要趋近于1。这两个项相互博弈才让VAE找到一种平衡，能输出图片。
+## 重参数化
