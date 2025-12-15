@@ -1,8 +1,8 @@
 # VAE
-> 论文：https://arxiv.org/pdf/1312.6114\\
-> 苏剑林：https://kexue.fm/archives/5253\\
-> 翁丽莲：https://lilianweng.github.io/posts/2018-08-12-vae/ \\
-> 余正阳：https://www.bilibili.com/video/BV1Mgh4zJEZV \\
+> 论文：https://arxiv.org/pdf/1312.6114  
+> 苏剑林：https://kexue.fm/archives/5253  
+> 翁丽莲：https://lilianweng.github.io/posts/2018-08-12-vae/   
+> 余正阳：https://www.bilibili.com/video/BV1Mgh4zJEZV   
 ## 入门问题
 第一次看论文的时候其实是懵圈的：
 1.  $p_\theta(\mathcal z),p_\theta(\mathcal x|\mathcal z),p_\theta(\mathcal z|\mathcal x)$ 怎么理解，他们是同一个分布还是不同的分布？如果是不同分布为什么都用同一个下标theta？
@@ -34,10 +34,10 @@ $\log p_\theta(x)$ 的证据下界(ELBO)
 ```
 这个式子是用KL散度的定义推出来的
 ```math
-D_{KL}(q(\mathcal z|\mathcal x)||p(\mathcal z|\mathcal x))=\Bbb E_{z\sim q}[\log q(\mathcal z|\mathcal x)-\log p(\mathcal z|\mathcal x)]\\
-=\Bbb E_{z\sim q}\Big[\log q(\mathcal z|\mathcal x) - \log \frac {p(\mathcal x|\mathcal z)p(\mathcal z)} {p(\mathcal x)}\Big]\\
-=\Bbb E_{z\sim q}\Big[\log q(\mathcal z|\mathcal x) - \log p(\mathcal x|\mathcal z) -\log p(\mathcal z) + \log p(\mathcal x)\Big ]\\
-=\log p(\mathcal x) +\Bbb E_{z\sim q}\Big[\log q(\mathcal z|\mathcal x) - \log p(\mathcal x|\mathcal z) -\log p(\mathcal z) \Big ]\\
+D_{KL}(q(\mathcal z|\mathcal x)||p(\mathcal z|\mathcal x))=\Bbb E_{z\sim q}[\log q(\mathcal z|\mathcal x)-\log p(\mathcal z|\mathcal x)]
+\newline=\Bbb E_{z\sim q}\Big[\log q(\mathcal z|\mathcal x) - \log \frac {p(\mathcal x|\mathcal z)p(\mathcal z)} {p(\mathcal x)}\Big]
+\newline=\Bbb E_{z\sim q}\Big[\log q(\mathcal z|\mathcal x) - \log p(\mathcal x|\mathcal z) -\log p(\mathcal z) + \log p(\mathcal x)\Big ]
+\newline=\log p(\mathcal x) +\Bbb E_{z\sim q}\Big[\log q(\mathcal z|\mathcal x) - \log p(\mathcal x|\mathcal z) -\log p(\mathcal z) \Big ]
 ```
 观察到 $\log p(\mathcal x)$ 就是我们希望最大化的目标函数，因此改写此式为：
 ```math
@@ -61,11 +61,17 @@ D_{KL}(q(\mathcal z|\mathcal x)||p(\mathcal z|\mathcal x))=\Bbb E_{z\sim q}[\log
 
 ## 损失函数
 上边得到的ELBO是根据散度定义和贝叶斯定理推导而来的，是一个通用规则。我们的目的是最大化 $\log p_\theta(\mathcal x)$，等价于求它上限的最大化，即求
-$\theta^*=\displaystyle \argmax _\theta ELBO$
+```math
+\theta^*=\displaystyle \arg\max_\theta ELBO
+```
 我们习惯于将损失函数定义为一个求最小的函数，因此
-$\theta^*=\displaystyle \argmin _\theta -ELBO$
+```math
+\theta^*=\displaystyle \arg\min_\theta -ELBO
+```
 所以损失函数为
-$L=D_{KL}(q_\phi(\mathcal z|\mathcal x)||p_\theta(\mathcal z)) + \Bbb E_{z\sim q_\phi}[-\log p_\theta(\mathcal x|\mathcal z)]$
+```math
+L=D_{KL}(q_\phi(\mathcal z|\mathcal x)||p_\theta(\mathcal z)) + \Bbb E_{z\sim q_\phi}[-\log p_\theta(\mathcal x|\mathcal z)]
+```
 第一项称为正则项，第二项称为重构误差。
 > 为什么KL散度是正则项？苏剑林的博客有说：每个输入的数据都会产生一个独立的正态分布（均值和方差），重参数化后即加入了基于这个方差的噪声进行训练。训练过程肯定会逐渐让噪声归零，也就是会让方差趋近于0，这其实就回到了AE。为了避免这这种情况，我们需要加一个正则，让方差趋近于1，即让 $q_\phi$ 去逼近标准正态分布，即上边的KL散度项（P(z)是标准正态分布）。
 > ![苏剑林的vae结构](vae_struct.png)
