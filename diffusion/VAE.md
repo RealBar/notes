@@ -38,8 +38,6 @@ D_{KL}(q(\mathcal z|\mathcal x)||p(\mathcal z|\mathcal x))=\Bbb E_{z\sim q}[\log
 =\Bbb E_{z\sim q}\Big[\log q(\mathcal z|\mathcal x) - \log \frac {p(\mathcal x|\mathcal z)p(\mathcal z)} {p(\mathcal x)}\Big]\\
 =\Bbb E_{z\sim q}\Big[\log q(\mathcal z|\mathcal x) - \log p(\mathcal x|\mathcal z) -\log p(\mathcal z) + \log p(\mathcal x)\Big ]\\
 =\log p(\mathcal x) +\Bbb E_{z\sim q}\Big[\log q(\mathcal z|\mathcal x) - \log p(\mathcal x|\mathcal z) -\log p(\mathcal z) \Big ]\\
-
-
 ```
 观察到 $\log p(\mathcal x)$ 就是我们希望最大化的目标函数，因此改写此式为：
 ```math
