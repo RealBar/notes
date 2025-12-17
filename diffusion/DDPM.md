@@ -1,4 +1,4 @@
-# DDPM
+# DDPM学习笔记
 ## 论文详细解读
 > https://arxiv.org/pdf/2006.11239
 ### Background
