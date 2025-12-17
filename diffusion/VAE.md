@@ -30,7 +30,14 @@ Unfortunately it is not easy to compute $p_\theta(\mathbf{x}^{(i)})$ in this way
 
 现在我们知道了VAE的encoder和decoder是怎么来的，那么这两个东西具体是怎么工作的呢？
 ## 模型拆解
-首先需要明确一点，VAE的论文正文的方法阐述部分并没有直接介绍encoder和decoder的具体模型，而是用p和q来表示这两个模型的分布，然后基于这两个分布提出了SGVB估计器和AEVB算法。然后在Example部分，作者用了一个神经网络模型来验证了这两个算法的有效性。
+首先需要明确一点，VAE的论文正文的方法阐述部分并没有直接介绍encoder和decoder的具体模型，而是用p和q来表示这两个模型的分布，然后基于这两个分布提出了SGVB估计器和AEVB算法。
+
+在Example部分，作者使用了神经网络来表示encoder $q_\phi(z|x)$ 的一部分，然后做了三个假设：
+1. 先验分布 $p_\theta(\mathcal z)$ 为一个标准高斯分布（论文提及，此时的先验分布没有参数theta） $p(\mathcal z) = \mathcal N(\mathcal z;\mathcal 0,\bf I)$
+2. 似然分布 $p_\theta(\mathcal x|\mathcal z)$ 为一个高斯分布 
+3. 真实的（不可解的）后验分布 $p_\theta(\mathcal z|\mathcal x)$ 为一个对角协方差矩阵的高斯分布（Gaussian with an approximately diagonal covariance），基于这个假设才有了我们用来近似它的 $q_\phi(\mathcal z|\mathcal x)$ 也是一个高斯分布 $q_\phi(\mathcal z|\mathcal x^{(i)}) = \mathcal N(\mathcal z;\mu^{(i)},\sigma^{2(i)}\bf I)$ （注意原论文中这个写法其实不太对，因为把方差写成 $\sigma^2I$ 表示对角线都是同一个元素，表示各向同性高斯分布。而实际上我们用encoder生成的方差是一个向量，协方差矩阵的对角线是可以有不同值的，所以方差应该写成 $ \mathcal N(\mathcal z;\mu^{(i)},diag (\sigma^{2(i)}))$ ）
+> 注意，神经网络**不能**直接表示一个概率分布，因为神经网络只能表示一个输入到输出的确定性映射，无法表示一个随机变量的分布。这里的编码器部分的神经网络输出是一个高斯分布的均值和方差（实际是由两个线性层分别输出），再在这个高斯分布中采样得到z，这样的z才是一个随机变量。所以不能简单地说神经网络就是encoder $q_\phi(z|x)$ 。
+同样的道理，decoder $p_\theta(x|z)$ 也不能直接用神经网络表示，神经网络输出的也是一个高斯分布的均值和方差，理论上也需要用这两个参数构建一个高斯分布，再在这个分布里采样才能得到输出的x'。但是实现上基本都简化了，我们只用神经网络输出均值，省略了方差，用均值直接当做采样输出了。
 
 
 > 引自苏剑林博客：
@@ -62,7 +69,7 @@ D_{KL}(q(\mathcal z|\mathcal x)||p(\mathcal z|\mathcal x))=\Bbb E_{z\sim q}[\log
 > 证据下界中的“证据”(evidence)指的是数据的边际概率，即 $p_\theta(\mathcal x)$。VAE的目标是最大化 $\log p_\theta(x)$ ，根据上边的推导，它的下界就是证据下界。
 
 ## 损失函数
-上边得到的ELBO是根据散度定义和贝叶斯定理推导而来的，是一个VB的核心结论。我们的目的是最大化 $\log p_\theta(\mathcal x)$，等价于求它上限的最大化，即求
+上边得到的ELBO是根据散度定义和贝叶斯定理推导而来的，是一个VB的核心结论，VAE只是借用。我们的目的是最大化 $\log p_\theta(\mathcal x)$，等价于求它上限的最大化，即求
 ```math
 \theta^*=\displaystyle \arg\max_\theta ELBO
 ```
@@ -77,15 +84,27 @@ L=D_{KL}(q_\phi(\mathcal z|\mathcal x)||p_\theta(\mathcal z)) + \Bbb E_{z\sim q_
 第一项称为正则项，第二项称为重构误差。
 > 为什么KL散度是正则项？每个输入的数据都会产生一个独立的正态分布（均值和方差），重参数化后即加入了基于这个方差的噪声进行训练。训练过程肯定会逐渐让噪声归零，也就是会让方差趋近于0，这其实就回到了AE。为了避免这这种情况，我们需要加一个正则，让方差趋近于1，即让 $q_\phi$ 去逼近标准正态分布[3]。
 
-这里重点说一下重构误差项。原论文用SGVB估计器来估计这个重构误差项，还专门设计了一套AEVB的算法，其实就是重参数化+蒙特卡洛估计。但是很多代码实现中，重构误差项直接用MSE来估计，很多人这里都没讲清楚。余正阳的视频[4]中有提到，这个估计实际等于一个MSE，但并未给出原理推导。
-这里其实是把“期望”用蒙特卡洛采样近似掉了，同时由于论文假设了似然分布是一个高斯分布，
-此时重构项的期望通常用 L 次采样的平均 近似：
+这里重点说一下重构误差项。原论文用SGVB估计器来估计这个重构误差项，还专门设计了一套AEVB的算法，其实就是重参数化+蒙特卡洛估计。但是很多代码实现中，重构误差项直接用MSE来估计，很多人这里都没讲清楚。网友的视频[4]中有提到，这个估计实际等于一个MSE，但并未给出原理推导。这里其实主要做了两步近似
+1. 先把似然分布的期望用蒙特卡洛采样近似掉，
 ```math
-\mathbb{E}_{q(z|x)}[\log p(x|z)] \approx \frac{1}{L}\displaystyle \sum _{l=1}^L \log p(x|z_l),\quad z_l\sim q(z|x)
+\mathbb{E}_{z \sim q_\phi(z|x)}[-\log p_\theta(x|z)] \approx \frac{1}{L}\displaystyle \sum _{l=1}^L -\log p_\theta(x|z_l),\quad z_l\sim q_\phi(z|x)
 ```
-
+2. 由于合理假设了似然分布是一个高斯分布，$p_\theta(\mathcal x|\mathcal z)=\mathcal N(\mathcal x; \mathcal \mu_\theta(\mathcal z), \mathcal \sigma^2_\theta I)$ ，可以根据最大似然估计推导：
 ```math
-\log p_\theta(\mathcal x|\mathcal z)=\log \mathcal N(\mathcal x; \mathcal \mu_\theta(\mathcal z), \mathcal \sigma^2_\theta I)
+\theta^{best} 
+=\arg\max_\theta \log \prod _{l=1}^L p_\theta(\mathcal x|\mathcal z)\\
+=\arg\max_\theta \sum _{l=1}^L \log p_\theta(\mathcal x|\mathcal z)\\
+=\arg\max_\theta \sum _{l=1}^L \log \mathcal N(\mathcal x; \mathcal \mu_\theta(\mathcal z), \mathcal \sigma^2_\theta I)\\
+=\arg\max_\theta \sum _{l=1}^L \frac{1}{2}\log (2\pi\mathcal \sigma^2_\theta) + \frac{1}{2\mathcal \sigma^2_\theta}\| \mathcal x - \mathcal \mu_\theta(\mathcal z) \|^2
+```
+由于第一项是常数，
+```math
+\theta^{best} = \sum _{l=1}^L \frac{1}{2\mathcal \sigma^2_\theta}\| \mathcal x - \mathcal \mu_\theta(\mathcal z) \|^2
+```
+注意到，似然高斯分布的均值由decoder的神经网络输出决定，即 $\mathcal \mu_\theta(\mathcal z)=x_{recon}$ ，且方差可以忽略为常数，所以可以写为：
+```math
+\theta^{best} \varpropto \| \mathcal x - \mathcal \mu_\theta(\mathcal z) \|^2\\
+=\| \mathcal x - \mathcal x_{recon}\|^2
 ```
 
 有视频说，VAE的损失函数其实就是这两个项之间的博弈：一方面，重构项缩小就要求噪声尽量低，就会让encoder输出的方差减少到0；而另一方面正则项要缩小就要求encoder输出的方差要趋近于1。这两个项相互博弈才让VAE找到一种平衡，能输出图片。
@@ -123,4 +142,4 @@ L=D_{KL}(q_\phi(\mathcal z|\mathcal x)||p_\theta(\mathcal z)) + \Bbb E_{z\sim q_
 > [3] [苏剑林博客](https://kexue.fm/archives/5253)  
 > [4] [翁丽莲博客](https://lilianweng.github.io/posts/2018-08-12-vae/)   
 > [5] [什么是推断、变分推断、变分贝叶斯推断](https://zhuanlan.zhihu.com/p/575328650)  
-> [6] [余正阳视频](https://www.bilibili.com/video/BV1Mgh4zJEZV)   
+> [6] [VAE介绍视频](https://www.bilibili.com/video/BV1Mgh4zJEZV)   
