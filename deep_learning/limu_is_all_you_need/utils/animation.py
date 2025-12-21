@@ -42,6 +42,7 @@ class Animator:  #@save
         self.config_axes()
         display.display(self.fig)
         display.clear_output(wait=True)
+
 def use_svg_display():  #@save
     """Use the svg format to display a plot in Jupyter."""
     backend_inline.set_matplotlib_formats('svg')
