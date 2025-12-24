@@ -45,6 +45,8 @@ q(\mathcal x_{1:T}|\mathcal x_0)=\displaystyle \prod _{t=1}^Tq(\mathcal x_t|\mat
 ```math
 E[-\log p_\theta(x_0)]\le E_{q(\mathcal x_{1:T}|\mathcal x_0)}\bigg[-\log \frac {p_\theta(\mathcal x_{0:T})}{q(\mathcal x_{1:T}|\mathcal x_0)}\bigg]
 ```
-
-
+然后论文给出了一项重要假设：
+$$
+x_{T}
+$$
 
