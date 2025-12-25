@@ -8,8 +8,7 @@ from time import time
 import torch
 from torch.utils.data import DataLoader
 
-from .loader.celeba import CelebaDataConfig, build_celeba_datasets
-from .loader.mnist import MnistDataConfig, build_mnist_datasets
+from .loader import build_datasets
 from .factory import create_model
 from .utils.checkpoint import save_checkpoint
 from .utils.device import get_device
@@ -50,22 +49,16 @@ def main() -> None:
     dataset = args.dataset
     model_name = args.model or dataset
 
-    if dataset == "celeba":
-        cfg = CelebaDataConfig(
-            root=args.data_root,
-            image_size=args.image_size,
-            train_ratio=args.celeba_train_ratio,
-            seed=args.seed,
-            limit=args.limit,
-        )
-        train_ds, test_ds = build_celeba_datasets(cfg)
-        in_channels = 3
-        recon_loss = args.recon_loss or "mse"
-    else:
-        cfg = MnistDataConfig(root=args.data_root, image_size=args.image_size)
-        train_ds, test_ds = build_mnist_datasets(cfg)
-        in_channels = 1
-        recon_loss = args.recon_loss or "bce"
+    train_ds, test_ds, ds_spec = build_datasets(
+        dataset,
+        data_root=args.data_root,
+        image_size=args.image_size,
+        seed=args.seed,
+        train_ratio=args.celeba_train_ratio,
+        limit=args.limit,
+    )
+    in_channels = ds_spec.in_channels
+    recon_loss = args.recon_loss or ds_spec.default_recon_loss
 
     train_loader = DataLoader(
         train_ds,
@@ -96,7 +89,8 @@ def main() -> None:
     model.to(device)
 
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.5, 0.999))
-    scaler = torch.amp.GradScaler("cuda", enabled=bool(args.amp and device.type == "cuda"))
+    use_amp = bool(args.amp and device.type == "cuda")
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     start_epoch = 1
     global_step = 0
@@ -114,7 +108,7 @@ def main() -> None:
 
     extra = {
         "args": vars(args),
-        "data_cfg": asdict(cfg),
+        "ds_spec": asdict(ds_spec),
         "dataset": dataset,
         "model_name": model_name,
         "device": str(device),
@@ -130,7 +124,8 @@ def main() -> None:
             x = x.to(device)
 
             opt.zero_grad(set_to_none=True)
-            with torch.amp.autocast(device_type=device.type, enabled=bool(args.amp)):
+            use_amp = bool(args.amp and device.type == "cuda")
+            with torch.amp.autocast(device_type="cuda", enabled=use_amp):
                 recon, mu, logvar = model(x)
                 losses = model.compute_loss(recon, x, mu, logvar)
 

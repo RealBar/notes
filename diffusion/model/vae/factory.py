@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
 from typing import Literal
 
 import torch
@@ -9,17 +6,7 @@ from .models.base import VAEBase
 from .models.celeba import CelebaVAE
 from .models.mnist import MnistVAE
 
-
 ModelName = Literal["celeba", "mnist"]
-
-
-@dataclass(frozen=True)
-class ModelSpec:
-    name: ModelName
-    in_channels: int
-    image_size: int
-    latent_dim: int
-
 
 def create_model(
     name: ModelName,

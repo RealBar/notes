@@ -7,6 +7,7 @@ import torch
 from torchvision.utils import make_grid, save_image
 
 from .factory import create_model, load_model_checkpoint
+from .loader import get_dataset_spec
 from .utils.device import get_device
 
 
@@ -26,11 +27,15 @@ def main() -> None:
     payload = torch.load(args.ckpt, map_location="cpu")
     ckpt_args = payload.get("args", {}) if isinstance(payload, dict) else {}
     model_name = ckpt_args.get("model", ckpt_args.get("model_name", args.dataset))
-    latent_dim = int(ckpt_args.get("latent_dim", 256))
-    image_size = int(ckpt_args.get("image_size", 64))
-    base_channels = int(ckpt_args.get("base_channels", 32))
+    ds_spec = get_dataset_spec(args.dataset)
 
-    in_channels = 3 if args.dataset == "celeba" else 1
+    default_latent_dim = 256 if args.dataset == "celeba" else 32
+    latent_dim = int(ckpt_args.get("latent_dim", default_latent_dim))
+    image_size = int(ckpt_args.get("image_size", ds_spec.default_image_size))
+    default_base_channels = 32 if args.dataset == "celeba" else 64
+    base_channels = int(ckpt_args.get("base_channels", default_base_channels))
+    
+    in_channels = ds_spec.in_channels
     model = create_model(
         model_name,
         latent_dim=latent_dim,
@@ -43,7 +48,7 @@ def main() -> None:
     model.eval()
 
     samples = model.sample(args.n, device=device).detach().cpu()
-    if args.dataset == "celeba":
+    if ds_spec.data_space == "minus_one_one":
         samples = (samples * 0.5 + 0.5).clamp(0, 1)
     grid = make_grid(samples, nrow=int(args.n**0.5), padding=2)
     out = Path(args.out)

@@ -7,8 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision.utils import make_grid, save_image
 
-from .loader.celeba import CelebaDataConfig, build_celeba_datasets
-from .loader.mnist import MnistDataConfig, build_mnist_datasets
+from .loader import build_datasets, get_dataset_spec
 from .factory import create_model, load_model_checkpoint
 from .utils.device import get_device
 
@@ -37,26 +36,33 @@ def main() -> None:
     payload = torch.load(args.ckpt, map_location="cpu")
     ckpt_args = payload.get("args", {}) if isinstance(payload, dict) else {}
     model_name = ckpt_args.get("model", ckpt_args.get("model_name", args.dataset))
-    latent_dim = int(ckpt_args.get("latent_dim", 256))
-    image_size = int(ckpt_args.get("image_size", 64))
-    base_channels = int(ckpt_args.get("base_channels", 32))
+    if args.dataset == "celeba":
+        default_latent_dim = 256
+        default_image_size = 64
+        default_base_channels = 32
+    else:
+        default_latent_dim = 32
+        default_image_size = 28
+        default_base_channels = 32
+
+    ds_spec = get_dataset_spec(args.dataset)
+    default_latent_dim = 256 if args.dataset == "celeba" else 32
+    latent_dim = int(ckpt_args.get("latent_dim", default_latent_dim))
+    image_size = int(ckpt_args.get("image_size", default_image_size))
+    base_channels = int(ckpt_args.get("base_channels", default_base_channels))
     beta = float(ckpt_args.get("beta", 1.0))
     recon_loss = ckpt_args.get("recon_loss", None)
+    seed = int(ckpt_args.get("seed", 42))
 
-    if args.dataset == "celeba":
-        cfg = CelebaDataConfig(
-            root=args.data_root,
-            image_size=image_size,
-            train_ratio=args.celeba_train_ratio,
-            seed=int(ckpt_args.get("seed", 42)),
-            limit=args.limit,
-        )
-        _, test_ds = build_celeba_datasets(cfg)
-        in_channels = 3
-    else:
-        cfg = MnistDataConfig(root=args.data_root, image_size=image_size)
-        _, test_ds = build_mnist_datasets(cfg)
-        in_channels = 1
+    _, test_ds, _ = build_datasets(
+        args.dataset,
+        data_root=args.data_root,
+        image_size=image_size,
+        seed=seed,
+        train_ratio=args.celeba_train_ratio,
+        limit=args.limit,
+    )
+    in_channels = ds_spec.in_channels
 
     loader = DataLoader(
         test_ds,
@@ -106,13 +112,13 @@ def main() -> None:
         x, recon = first_batch
         n = min(args.n_samples, x.shape[0])
         pair = torch.cat([x[:n], recon[:n]], dim=0)
-        if args.dataset == "celeba":
+        if ds_spec.data_space == "minus_one_one":
             pair = (pair * 0.5 + 0.5).clamp(0, 1)
         grid = make_grid(pair, nrow=n, padding=2)
         save_image(grid, out_dir / "recon_grid.png")
 
     samples = model.sample(args.n_samples, device=device).detach().cpu()
-    if args.dataset == "celeba":
+    if ds_spec.data_space == "minus_one_one":
         samples = (samples * 0.5 + 0.5).clamp(0, 1)
     grid = make_grid(samples, nrow=int(args.n_samples**0.5), padding=2)
     save_image(grid, out_dir / "samples_grid.png")
