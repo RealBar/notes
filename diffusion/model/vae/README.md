@@ -136,13 +136,13 @@ vae/
 
 ### VAE 的核心原理（对应实现）
 
-给定输入图像 \(x\)，VAE 学习一个近似后验 \(q_\phi(z\mid x)\)（编码器），以及生成模型 \(p_\theta(x\mid z)\)（解码器）。
+给定输入图像 $x$，VAE 学习一个近似后验 $q_\phi(z\mid x)$（编码器），以及生成模型 $p_\theta(x\mid z)$（解码器）。
 
 训练目标是最大化 ELBO（等价于最小化负 ELBO）：
 
-\[
+$$
 \mathcal{L}(x) = \underbrace{\mathbb{E}_{q_\phi(z\mid x)}[-\log p_\theta(x\mid z)]}_{\text{重建项}} + \beta\,\underbrace{D_{KL}(q_\phi(z\mid x)\,\Vert\,p(z))}_{\text{KL 正则}}
-\]
+$$
 
 在代码里：
 

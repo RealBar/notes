@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import math
-
-import torch
 from torch import Tensor, nn
 
 from ..modules.conv_blocks import ConvBlock, DeconvBlock
@@ -66,6 +63,6 @@ class CelebaVAE(VAEBase):
         h = h.view(z.shape[0], self.base_channels * 8, 4, 4)
         x = self.decoder(h)
         if x.shape[-1] != self.image_size:
-            x = torch.nn.functional.interpolate(x, size=(self.image_size, self.image_size), mode="bilinear", align_corners=False)
+            x = nn.functional.interpolate(x, size=(self.image_size, self.image_size), mode="bilinear", align_corners=False)
         return x
 
