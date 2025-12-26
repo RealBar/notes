@@ -19,7 +19,12 @@ def inference(checkpoint_path=None, num_images=8):
     
     model = DiT(input_size=IMAGE_SIZE).to(DEVICE)
     ckpt = torch.load(checkpoint_path, map_location=DEVICE)
-    model.load_state_dict(ckpt)
+    try:
+        model.load_state_dict(ckpt)
+    except RuntimeError as e:
+        print(f"Error loading checkpoint: {e}")
+        print(f"The checkpoint might be trained with a different resolution. Current IMAGE_SIZE is {IMAGE_SIZE}.")
+        return
     
     diffusion = Diffusion(timesteps=TIMESTEPS)
     

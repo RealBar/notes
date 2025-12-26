@@ -10,7 +10,7 @@ import os
 import glob
 
 # Hyperparameters
-IMAGE_SIZE = 32 
+IMAGE_SIZE = 64
 BATCH_SIZE = 64
 LR = 1e-4
 EPOCHS = 5
@@ -96,11 +96,16 @@ def train():
     if checkpoints:
         latest_checkpoint = checkpoints[-1]
         print(f"Resuming from {latest_checkpoint}...")
-        model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE))
         try:
-            start_epoch = int(latest_checkpoint.split("_")[-1].split(".")[0])
-        except ValueError:
-            pass
+            model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE))
+            try:
+                start_epoch = int(latest_checkpoint.split("_")[-1].split(".")[0])
+            except ValueError:
+                pass
+        except RuntimeError as e:
+            print(f"Failed to load checkpoint {latest_checkpoint}: {e}")
+            print("Starting training from scratch...")
+            start_epoch = 0
     
     for epoch in range(start_epoch, EPOCHS):
         model.train()
