@@ -191,11 +191,11 @@ $$
 注意到，我们的目的是求 $q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)$ 的分布，所以上式可以写成关于 $\mathbf x_{t-1}$ 高斯分布形式：
 
 $$
-\propto \exp\bigg\{-\frac 1 2\Big[ (\frac {1-\beta_t}{\beta_t}\mathbf+\frac 1{1-\bar \alpha_{t-1}}) \mathbf x_{t-1}^2 -2(\frac {\sqrt{1-\beta_t}\mathbf x_t}{\beta_t}+\frac {\sqrt {\bar \alpha_{t-1}}\mathbf x_0}{1-\bar \alpha_{t-1}})\mathbf x_{t-1}+ C\Big]\bigg\}
+\propto \exp\bigg[-\frac 1 2\Big[ (\frac {1-\beta_t}{\beta_t}\mathbf+\frac 1{1-\bar \alpha_{t-1}}) \mathbf x_{t-1}^2 -2(\frac {\sqrt{1-\beta_t}\mathbf x_t}{\beta_t}+\frac {\sqrt {\bar \alpha_{t-1}}\mathbf x_0}{1-\bar \alpha_{t-1}})\mathbf x_{t-1}+ C\Big]\bigg]
 $$
 
 $$
-=\exp\bigg\{ -\frac 1 2\Big[ \frac {\alpha_t-\alpha_t\bar \alpha_{t-1}+\beta_t}{\beta_t(1-\bar \alpha_t)}\mathbf x_{t-1}^2 -2\frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\sqrt{\bar \alpha_{t-1}}\beta_t\mathbf x_0}{\beta_t(1-\bar\alpha_{t-1})} \mathbf x_{t-1}+ C\Big]\bigg\}
+=\exp\bigg[ -\frac 1 2\Big[ \frac {\alpha_t-\alpha_t\bar \alpha_{t-1}+\beta_t}{\beta_t(1-\bar \alpha_t)}\mathbf x_{t-1}^2 -2\frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\sqrt{\bar \alpha_{t-1}}\beta_t\mathbf x_0}{\beta_t(1-\bar\alpha_{t-1})} \mathbf x_{t-1}+ C\Big]\bigg]
 $$
 
 令平方项系数为A,线性项系数为B,常数项系数为C，则有
@@ -212,8 +212,8 @@ $$
 上式可以写成
 
 $$
-\exp\bigg\{ -\frac 1 2\Big( A\mathbf x_{t-1}^2 + B\mathbf x_{t-1}+C\Big)\bigg\}\\
-=\exp\bigg\{ -\frac 1 2A\Big( \mathbf x_{t-1}+\frac {B}{2A}\Big)^2+C'\bigg\}\\
+\exp\bigg[ -\frac 1 2\Big( A\mathbf x_{t-1}^2 + B\mathbf x_{t-1}+C\Big)\bigg]\\
+=\exp\bigg[ -\frac 1 2A\Big( \mathbf x_{t-1}+\frac {B}{2A}\Big)^2+C'\bigg]\\
 = \exp \Big(-\frac {\Big( \mathbf x_{t-1}+\frac {B}{2A}\Big)^2}{2\frac {1}{A}}\Big).C''
 $$
 
