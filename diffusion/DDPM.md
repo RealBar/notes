@@ -135,6 +135,7 @@ $$
 $$
 \mathbf x_{t} = \sqrt{1-\beta_t}\mathbf x_{t-1}+\sqrt{\beta_t}\epsilon_t, 其中\epsilon_t\sim \mathcal N(0,\mathcal I)
 $$
+
 令 $\alpha_t=1-\beta_t, \bar \alpha_t=\prod_{s=1}^t\alpha_s$ 则有
 
 $$
@@ -142,6 +143,7 @@ $$
 = \sqrt{\alpha_t}(\sqrt {\alpha_{t-1}} \mathbf x_{t-2}+\sqrt \beta_{t-1}\epsilon_{t-1})+\sqrt {\beta_t}\epsilon_t\\
 =\sqrt{\alpha_t}\sqrt{\alpha_{t-1}} \mathbf x_{t-2}+\sqrt{\alpha_t}\sqrt{\beta_{t-1}}\epsilon_{t-1}+\sqrt{\beta_t}\epsilon_t\\
 $$
+
 因为 $\epsilon_t \sim \mathcal N(0,\mathcal I)$，则有 $a\epsilon_t\sim \mathcal N(0,a^2\mathcal I)$ 所以上式的后两项可以写成一个高斯分布，它的均值是0，方差可以表示为:
 
 $$
@@ -149,16 +151,19 @@ $$
 = \alpha_t(1-\alpha_{t-1}) + \beta_t\\
 =1-\alpha_t\alpha_{t-1}\\
 $$
+
 所以表示成分布就有
 
 $$
 \mathbf x_{t} \sim \mathcal N(\sqrt{\alpha_t\alpha_{t-1}} \mathbf x_{t-2},\sqrt{1-\alpha_t \alpha_{t-1}}\mathcal I)
 $$
+
 推广到 $\mathbf x_0$
 
 $$
 \mathbf x_{t} \sim \mathcal N(\sqrt{\bar \alpha_t}\mathbf x_0,(1-\bar \alpha_t)\mathcal I)
 $$
+
 逆重参数化得到
 
 $$
@@ -172,6 +177,7 @@ $$
 q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0) =\frac {q(\mathbf x_{t}|\mathbf x_{t-1},\mathbf x_0)q(\mathbf x_{t-1}|\mathbf x_0)}{q(\mathbf x_{t}|\mathbf x_0)} \\
 = \frac {q(\mathbf x_{t}|\mathbf x_{t-1})q(\mathbf x_{t-1}|\mathbf x_0)}{q(\mathbf x_{t}|\mathbf x_0)}
 $$
+
 带入 $\mathbf x_t \sim \mathcal N(\sqrt{1-\beta_t}\mathbf x_{t-1},\beta_t\mathcal I)$ 以及我们前边推导的结论 $\mathbf x_{t} \sim \mathcal N(\sqrt{\bar \alpha_t}\mathbf x_0,(1-\bar \alpha_t)\mathcal I)$ 可以得到：
 
 $$
@@ -191,6 +197,7 @@ $$
 $$
 =\exp\bigg\{ -\frac 1 2\Big[ \frac {\alpha_t-\alpha_t\bar \alpha_{t-1}+\beta_t}{\beta_t(1-\bar \alpha_t)}\mathbf x_{t-1}^2 -2\frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\sqrt{\bar \alpha_{t-1}}\beta_t\mathbf x_0}{\beta_t(1-\bar\alpha_{t-1})} \mathbf x_{t-1}+ C\Big]\bigg\}
 $$
+
 令平方项系数为A,线性项系数为B,常数项系数为C，则有
 
 $$
@@ -201,6 +208,7 @@ $$
 $$
 B=-2 \frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\sqrt{\bar \alpha_{t-1}}\beta_t\mathbf x_0}{\beta_t(1-\bar\alpha_{t-1})}
 $$
+
 上式可以写成
 
 $$
@@ -208,6 +216,7 @@ $$
 =\exp\bigg\{ -\frac 1 2A\Big( \mathbf x_{t-1}+\frac {B}{2A}\Big)^2+C'\bigg\}\\
 = \exp \Big(-\frac {\Big( \mathbf x_{t-1}+\frac {B}{2A}\Big)^2}{2\frac {1}{A}}\Big).C''
 $$
+
 可以看到，具备高斯分布的性质，所以 $q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)$ 也符合高斯分布，且均值为 $\mu=-\frac {B}{2A}$，方差为 $\sigma^2=\frac {1}{A}$ ，带入A和B得到论文中的式(7)
 
 $$
@@ -217,6 +226,7 @@ $$
 $$
 \mu = -\frac {B}{2A}=\frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\sqrt{\bar \alpha_{t-1}}\beta_t\mathbf x_0}{1-\bar\alpha_{t}}
 $$
+
 我们根据正向过程的x0推导式可以反解出x0的表达式 $\mathbf x_0 = \frac {\mathbf x_t-\sqrt{1-\bar\alpha_t}\hat\epsilon_t}{\sqrt{\bar \alpha_t}}$ ，带入上式化简得到论文中的式(10)(11)
 
 $$
@@ -230,4 +240,5 @@ $$
 $$
 =\frac {1}{\sqrt{\bar\alpha_t}}\mathbf (x_t-\frac {\beta_t}{\sqrt{1-\bar\alpha_{t}}}\hat\epsilon_t)
 $$
+
 注意当我们用反解出x0带入的时候，就不能直接用 $\epsilon_t$ 了，因为 $\epsilon_t$ 是重参数化采样过程引入的，在给定采样结果去反推原分布时，只能用模型去估计，因此反解后的噪音项变成了 $\hat\epsilon_t$
