@@ -7,13 +7,13 @@
 ```math
 p_\theta(\mathbf x_0)=\int p_\theta(\mathbf x_{0:T})d\mathbf x_{1:T}
 ```
-其中 $\mathbf x_0\sim q(\mathbf x_0)$ 表示现实数据， $\mathbf x_{1:T}=\mathbf x_1 ...\mathbf x_T$ 表示同维度的隐层状态
+其中 $\mathbf x_0\sim q(\mathbf x_0)$ 表示现实数据， $\mathbf x_{1:T}=\mathbf x_1 ...\mathbf x_T$ 表示同维度的隐藏态
 
 然后定义了前向过程(forward process)和反向过程(reverse process)。
 - 反向过程是 $p_\theta(\mathbf x_{0:T})$ ，可以理解成从一个高斯分布（prior distribution）到真实数据分布的还原过程
 - 前向过程也叫扩散过程（diffusion process）是p的后验近似 $q(\mathbf x_{1:T}|\mathbf x_0)$ ，可以理解成从真实数据到噪音的扩散过程
  
-假设了q和p都是马尔科夫链,注意到p是反向的，q是正向的，贝叶斯展开后分别注意他们的条件序列时间
+假设了q和p都是马尔科夫链，注意到p是反向的，q是正向的，贝叶斯展开后分别注意他们的条件序列时间
 ```math
 p_{\theta}(\mathbf x_{0:T})=p_{\theta}(\mathbf x_0,\mathbf x_1,...\mathbf x_n)=p_\theta(\mathbf x_T)\prod_{t=1}^Tp_\theta（\mathbf x_{t-1}|\mathbf x_t）
 \\
@@ -26,7 +26,9 @@ q(\mathbf x_{1:T}|\mathbf x_0)=\prod _{t=1}^Tq(\mathbf x_t|\mathbf x_{t-1})
 此时论文给出了一项重要假设：前向过程的是一个增加标准差为 $\beta_t$ 的高斯噪声的过程：
 
 $$
+\begin{equation}
 \mathbf x_{t} = \sqrt{1-\beta_t}\mathbf x_{t-1}+\sqrt{\beta_t}\epsilon_t, 其中\epsilon_t\sim \mathcal N(0,\mathcal I)
+\end{equation}
 $$
 
 根据重参数化技巧，单步的前向过程可以写成一个高斯分布
@@ -60,14 +62,15 @@ $$
 \log p_{\theta}(\mathbf x_0)\ge \Bbb E_{q(\mathbf x_{1:T}|\mathbf x_0)}\bigg[\log \frac {p_\theta(\mathbf x_{0:T})}{q(\mathbf x_{1:T}|\mathbf x_0)}\bigg]
 $$
 
-两边同时加负号，同时再求一次对 $\mathbf x_0 \sim p_{data}$ 的期望，就得到了论文中负对数似然的上界的第1个式子：
+两边同时加负号，同时再求一次对 $\mathbf x_0 \sim q(\mathbf x_0)$ 的期望，就得到了论文中负对数似然的上界的第1个式子：
 
 $$
 \Bbb E[-\log p_\theta(\mathbf x_0)]\le \Bbb E_q\bigg[-\log \frac {p_\theta(\mathbf x_{0:T})}{q(\mathbf x_{1:T}|\mathbf x_0)}\bigg]
 $$
 
-> 有一个关键信息论文隐去了，这里的 $\Bbb E_q$ 究竟指什么？根据我们的推导过程，右边式子这里的期望求了两次，分别是对两个分布求期望（这个信息非常重要，在后面的推导过程中期关键作用）：
-> $$\Bbb E_q = \Bbb E_{\mathbf {x_0} \sim p_{data}, \mathbf x_{1:T} \sim q(\mathbf x_{1:T}|\mathbf x_0)}$$
+> 有一个关键信息论文隐去了，这里的 $\Bbb E_q$ 究竟指什么？根据我们的推导过程，右边式子这里的期望求了两次，分别是对两个分布求期望，一次是对 $\mathbf x_{1:T}\sim p(\mathbf x_{1:T}|\mathbf x_0)$ ，一次是对 $\mathbf x_0 \sim q(\mathbf x_0)$ ：
+> $$\Bbb E_q = \Bbb E_{\mathbf {x_0} \sim q(\mathbf x_0), \mathbf x_{1:T} \sim q(\mathbf x_{1:T}|\mathbf x_0)}=\Bbb E_{\mathbf x_{0:T}\sim q(\mathbf x_{0:T})}$$
+> 所以 $\Bbb E_q$ 事实上是对 $x_{0:T}$ 这T+1个变量的联合分布的期望。这一点在后边的推导中至关重要。
 
 右边的式子继续推导，先只看内部的分式项，将前面p和q的表达式带入得到
 
@@ -82,20 +85,22 @@ $$
 =-\log p_\theta(\mathbf x_T)-\sum_{t=1}^T\log \frac {p_\theta(\mathbf x_{t-1}|\mathbf x_{t})}{q(\mathbf x_t|\mathbf x_{t-1})}
 $$
 
-两边同时对q求期望（注意这里的q指的是上边的对两个分布的复合期望），就得到了论文中负对数似然的变分上界的第2个式子：
+两边同时对q求期望（注意这个期望指的是上变说过的复合期望）
 
 $$
+\begin{equation}
 \Bbb E_q\bigg[-\log \frac {p_\theta(\mathbf x_{0:T})}{q(\mathbf x_{1:T}|\mathbf x_0)}\bigg]= 
 \Bbb E_q\bigg[-\log p_\theta(\mathbf x_T)-\sum_{t=1}^T\log \frac {p_\theta(\mathbf x_{t-1}|\mathbf x_{t})}{q(\mathbf x_t|\mathbf x_{t-1})}\bigg]
+\end{equation}
 $$
 
-右边的式子可以继续推导，先根据贝叶斯公式有
+(2)式即为论文中的(3)。(2)可以继续推导，先根据贝叶斯公式和前向过程的马尔科夫性有：
 
 $$
-q(\mathbf x_t|\mathbf x_{t-1}) = \frac {q(\mathbf x_{t-1}|\mathbf x_{t},x_0)q(\mathbf x_t|\mathbf x_0)}{q(\mathbf x_{t-1}|\mathbf x_0)} 
+q(\mathbf x_t|\mathbf x_{t-1}) = q(\mathbf x_t|\mathbf x_{t-1},\mathbf x_0)=\frac {q(\mathbf x_{t-1}|\mathbf x_{t},x_0)q(\mathbf x_t|\mathbf x_0)}{q(\mathbf x_{t-1}|\mathbf x_0)} 
 $$
 
-带入上式，得到
+带入(2)式，得到
 
 $$
 \Bbb E_q\bigg[-\log p_\theta(\mathbf x_T)+\sum_{t=1}^T\log \frac {q(\mathbf x_t|\mathbf x_{t-1})} {p_\theta(\mathbf x_{t-1}|\mathbf x_{t})}\bigg]
@@ -114,38 +119,70 @@ $$
 因此原式等于
 
 $$
-\Bbb E_q\bigg[-\log p_\theta(\mathbf x_T)+\log q(\mathbf x_T|\mathbf x_0)+\sum_{t=1}^T\frac {q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)} {p_\theta(\mathbf x_{t-1}|\mathbf x_{t})}\bigg]\\
-=\Bbb E_q\bigg[\frac {\log q(\mathbf x_T|\mathbf x_0)}{p_\theta(\mathbf x_T)} + \sum_{t=1}^T\frac {q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)} {p_\theta(\mathbf x_{t-1}|\mathbf x_{t})} \bigg]\\
+\Bbb E_q\bigg[-\log p_\theta(\mathbf x_T)+\log q(\mathbf x_T|\mathbf x_0)+\sum_{t=1}^T\log \frac {q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)} {p_\theta(\mathbf x_{t-1}|\mathbf x_{t})}\bigg]
 $$
 
-此时要将 $\Bbb E_q$ 拆开，得到是两重期望 $\Bbb E_q = \Bbb E_{\mathbf x_0 \sim p_{data},\mathbf x_{1:T-1}\sim q(\mathbf x_{1:T-1}|\mathbf x_0)}\big[ \Bbb E_{\mathbf x_T\sim q(\mathbf x_T|\mathbf x_{0})}[\cdot] \big]$ 为了书写方便将外边的期望依旧记 $\Bbb E_q$，另外还需要将t=1的情况单独写出来，可以写出最终的上界表达式
+$$
+\begin{equation}
+=\Bbb E_q\bigg[\log\frac { q(\mathbf x_T|\mathbf x_0)}{p_\theta(\mathbf x_T)} + \sum_{t=1}^T\log \frac {q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)} {p_\theta(\mathbf x_{t-1}|\mathbf x_{t})} \bigg]
+\end{equation}
+$$
+
+还记得我们上边说过的 $\Bbb E_q$ 真实的意义对 $x_{0:T}$ 这T+1个变量的联合分布的期望 $\Bbb E_{\mathbf x_{0:T}\sim q(\mathbf x_{0:T})}$ ，所以我们可以将其中的目标随机变量分离出来，写成两重期望的形式。如对于随机变量 $\mathbf x_t$ 
 
 $$
-\Bbb E_q\bigg[ \Bbb E_{\mathbf x_T\sim q(\mathbf x_T|\mathbf x_{0})}\Big[\frac {\log q(\mathbf x_T|\mathbf x_0)} {p_\theta(\mathbf x_T)}\Big] + \sum_{t=2}^T\Bbb E_{\mathbf x_{t-1}\sim q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)}\Big[\frac {q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)}{p_\theta(\mathbf x_{t-1}|\mathbf x_t)}\Big]+\Bbb E_{x_0 \sim p_{data}}\Big[\log \frac { q(\mathbf x_0|\mathbf x_{1},\mathbf x_0)} {p_\theta(\mathbf x_0|\mathbf x_1)}\Big]\bigg]
+\Bbb E_q=\Bbb E_{\mathbf x_{0:t-1,t+1:T}\sim q(\mathbf x_{0:t-1,t+1:T})}\big[\Bbb E_{\mathbf x_t\sim q(\mathbf x_t)}[\cdot]\big]
+$$
+
+注意到，对于分离到内层期望的随机变量，我们可以在最外层再求一次对它的期望，因为这个变量在内层已经被积分掉了，所以最外层对它再求期望并不会改变结果
+
+$$
+\Bbb E_{\mathbf x_{0:t-1,t+1:T}\sim q(\mathbf x_{0:t-1,t+1:T})}\big[\Bbb E_{\mathbf x_t\sim q(\mathbf x_t)}[\cdot]\big]
+$$
+
+$$
+=\Bbb E_{\mathbf x_t\sim q(\mathbf x_t)} \Big[ \Bbb E_{\mathbf x_{0:t-1,t+1:T}\sim q(\mathbf x_{0:t-1,t+1:T})}\big[\Bbb E_{\mathbf x_t\sim q(\mathbf x_t)}[\cdot]\big]\Big]
+$$
+
+$$
+=\Bbb E_q\big[\Bbb E_{\mathbf x_t\sim q(\mathbf x_t)}[\cdot]\big]
+$$
+
+将上式带入(3)并选择各项目标变量，另外还需要将t=1的情况单独写出来
+
+$$
+\Bbb E_q\bigg[ \Bbb E_{\mathbf x_T\sim q(\mathbf x_T|\mathbf x_{0})}\Big[\log \frac {q(\mathbf x_T|\mathbf x_0)} {p_\theta(\mathbf x_T)}\Big] + \sum_{t=2}^T\Bbb E_{\mathbf x_{t-1}\sim q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)}\Big[\frac {q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)}{p_\theta(\mathbf x_{t-1}|\mathbf x_t)}\Big]+\Bbb E_{\mathbf x_0 \sim q(\mathbf x_0)}\Big[\log \frac { q(\mathbf x_0|\mathbf x_{1},\mathbf x_0)} {p_\theta(\mathbf x_0|\mathbf x_1)}\Big]\bigg]
 $$
 
 注意到期望内的前两项都符合KL散度的形式，第三项可以化简因为 $q(\mathbf x_0|\mathbf x_{1},\mathbf x_0)=1$ ，所以 $\log \frac { q(\mathbf x_0|\mathbf x_{1},\mathbf x_0)} {p_\theta(\mathbf x_0|\mathbf x_1)} = -\log p_\theta(\mathbf x_0|\mathbf x_1)$ ，所以上式可以写成最终KL散度的形式
 
 $$
+\begin{equation}
 \Bbb E_q\bigg[ D_{KL}(q(\mathbf x_T|\mathbf x_0)||p_\theta(\mathbf x_T)) + \sum_{t=2}^TD_{KL}(q(\mathbf x_{t-1}|\mathbf x_t,x_0)||p_\theta(\mathbf x_{t-1}|\mathbf x_t)) - \log p_\theta(\mathbf x_0| \mathbf x_1)\bigg]
+\end{equation}
 $$
+
+此式即为原文中的式(5)
 
 ### 前向过程的x_0推导
 根据前向过程的单步假设，我们可以推导出从 $\mathbf x_0$ 到 $\mathbf x_t$ 的分布计算公式。我们先推导从 $\mathbf x_{t-2}$ 到 $\mathbf x_t$:
+令 $\alpha_t=1-\beta_t, \bar \alpha_t=\prod_{s=1}^t\alpha_s$ ，根据式(1)有
 
 $$
-\mathbf x_{t} = \sqrt{1-\beta_t}\mathbf x_{t-1}+\sqrt{\beta_t}\epsilon_t, 其中\epsilon_t\sim \mathcal N(0,\mathcal I)
+\mathbf x_{t} = \sqrt{\alpha_t}\mathbf x_{t-1}+\sqrt{\beta_t}\epsilon_t
 $$
 
-令 $\alpha_t=1-\beta_t, \bar \alpha_t=\prod_{s=1}^t\alpha_s$ 则有
+$$
+= \sqrt{\alpha_t}(\sqrt {\alpha_{t-1}} \mathbf x_{t-2}+\sqrt \beta_{t-1}\epsilon_{t-1})+\sqrt {\beta_t}\epsilon_t
+$$
 
 $$
-\mathbf x_{t} = \sqrt{\alpha_t}\mathbf x_{t-1}+\sqrt{\beta_t}\epsilon_t\\
-= \sqrt{\alpha_t}(\sqrt {\alpha_{t-1}} \mathbf x_{t-2}+\sqrt \beta_{t-1}\epsilon_{t-1})+\sqrt {\beta_t}\epsilon_t\\
+\begin{equation}
 =\sqrt{\alpha_t}\sqrt{\alpha_{t-1}} \mathbf x_{t-2}+\sqrt{\alpha_t}\sqrt{\beta_{t-1}}\epsilon_{t-1}+\sqrt{\beta_t}\epsilon_t\\
+\end{equation}
 $$
 
-因为 $\epsilon_t \sim \mathcal N(0,\mathcal I)$，则有 $a\epsilon_t\sim \mathcal N(0,a^2\mathcal I)$ 所以上式的后两项可以写成一个高斯分布，它的均值是0，方差可以表示为:
+因为 $\epsilon_t,\epsilon_{t-1} \sim \mathcal N(0,\mathcal I)$，且根据高斯分布的性质 $a\epsilon_t+b\epsilon_{t-1} \sim \mathcal N(0,(a^2+b^2)\mathcal I)$ ，所以上式的后两项可以写成一个高斯分布的噪声，它的均值是0，方差可以表示为:
 
 $$
 \alpha_t \beta_{t-1} + \beta_t\\
@@ -153,22 +190,24 @@ $$
 =1-\alpha_t\alpha_{t-1}\\
 $$
 
-所以表示成分布就有
+所以式(5)可以看做 $x_t$ 从一个高斯分布采样过程重参数化的结果，其高斯分布为
 
 $$
 \mathbf x_{t} \sim \mathcal N(\sqrt{\alpha_t\alpha_{t-1}} \mathbf x_{t-2},\sqrt{1-\alpha_t \alpha_{t-1}}\mathcal I)
 $$
 
-推广到 $\mathbf x_0$
+我们将这个过程推广到 $\mathbf x_0$
 
 $$
-\mathbf x_{t} \sim \mathcal N(\sqrt{\bar \alpha_t}\mathbf x_0,(1-\bar \alpha_t)\mathcal I)
+\mathbf x_{t} \sim \mathcal N(\sqrt{\bar \alpha_t \bar \alpha_{t-1} \cdots \bar \alpha_1}\mathbf x_0,\sqrt{1-\bar \alpha_t \bar \alpha_{t-1} \cdots \bar \alpha_1}\mathcal I)=\mathcal N(\sqrt{\bar \alpha_t}\mathbf x_0,(1-\bar \alpha_t)\mathcal I)
 $$
 
 逆重参数化得到
 
 $$
+\begin{equation}
 \mathbf x_{t} = \sqrt{\bar \alpha_t}\mathbf x_0+\sqrt{1-\bar \alpha_t}\epsilon, 其中\epsilon\sim \mathcal N(0,\mathcal I)
+\end{equation}
 $$
 
 ### 前向过程的后验推导
@@ -218,17 +257,16 @@ $$
 = \exp \Big(-\frac {\Big( \mathbf x_{t-1}+\frac {B}{2A}\Big)^2}{2\frac {1}{A}}\Big).C''
 $$
 
-可以看到，具备高斯分布的性质，所以 $q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)$ 也符合高斯分布，且均值为 $\mu=-\frac {B}{2A}$，方差为 $\sigma^2=\frac {1}{A}$ ，带入A和B得到论文中的式(7)
+可以看到，具备高斯分布的性质，所以 $q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)$ 也符合高斯分布，且均值为 $\mu=-\frac {B}{2A}$，方差为 $\sigma^2=\frac {1}{A}$ ，带入A和B得
 
 $$
-\sigma^2 = \frac {1}{A} = \frac {\beta_t(1-\bar\alpha_{t-1})}{1-\bar\alpha_{t}}
-$$
-
-$$
+\begin{equation}
+\sigma^2 = \frac {1}{A} = \frac {\beta_t(1-\bar\alpha_{t-1})}{1-\bar\alpha_{t}},
 \mu = -\frac {B}{2A}=\frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\sqrt{\bar \alpha_{t-1}}\beta_t\mathbf x_0}{1-\bar\alpha_{t}}
+\end{equation}
 $$
-
-我们根据正向过程的x0推导式可以反解出x0的表达式 $\mathbf x_0 = \frac {\mathbf x_t-\sqrt{1-\bar\alpha_t}\hat\epsilon_t}{\sqrt{\bar \alpha_t}}$ ，带入上式化简得到论文中的式(10)(11)
+上边的(7)即到论文中的式(7)。我们根据正向过程的x0推导式可以反解出x0的表达式 $\mathbf x_0 = \frac {\mathbf x_t-\sqrt{1-\bar\alpha_t}\hat\epsilon_t}{\sqrt{\bar \alpha_t}}$ ，带入(7)
+>注意当我们用反解出x0带入的时候，就不能直接用 $\epsilon_t$ 了，因为 $\epsilon_t$ 是重参数化采样过程引入的，在给定采样结果去反推原分布时，只能用模型去估计，因此反解后的噪音项变成了 $\hat\epsilon_t$
 
 $$
 \mu = \frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\beta_t\frac{\mathbf x_t-\sqrt{1-\bar\alpha_t}\hat\epsilon_t}{\sqrt{\alpha_t}}}{1-\bar\alpha_{t}}
@@ -238,11 +276,15 @@ $$
 =\frac {{\alpha_t(1-\bar\alpha_{t-1})+\beta_t}}{(1-\bar\alpha_{t})\sqrt{\alpha_t}}\mathbf x_t-\frac {\beta_t}{\sqrt{\alpha_t(1-\bar\alpha_t)}}\hat\epsilon_t
 $$
 
+化简，由于 $\hat\epsilon_t$ 在实践中是由模型 $\theta$ 根据 $\mathbf x_t$ 和时间步 $t$ 估计出来的，可以写作 $\epsilon_\theta(\mathbf x_t,t)$ ，最终得
+
 $$
-=\frac {1}{\sqrt{\bar\alpha_t}}\mathbf (x_t-\frac {\beta_t}{\sqrt{1-\bar\alpha_{t}}}\hat\epsilon_t)
+\begin{equation}
+\mu_\theta = \frac {1}{\sqrt{\bar\alpha_t}}\mathbf (x_t-\frac {\beta_t}{\sqrt{1-\bar\alpha_{t}}}\epsilon_\theta(\mathbf x_t,t))
+\end{equation}
 $$
 
-注意当我们用反解出x0带入的时候，就不能直接用 $\epsilon_t$ 了，因为 $\epsilon_t$ 是重参数化采样过程引入的，在给定采样结果去反推原分布时，只能用模型去估计，因此反解后的噪音项变成了 $\hat\epsilon_t$
+即对应论文的式(11)。
 ### 思考和总结
 论文给出的DDPM算法如下：
 
