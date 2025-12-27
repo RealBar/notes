@@ -108,7 +108,7 @@ $$
 ### 前向过程的x_0推导
 根据前向过程的单步假设，我们可以推导出从 $\mathbf x_0$ 到 $\mathbf x_t$ 的分布计算公式。我们先推导从 $\mathbf x_{t-2}$ 到 $\mathbf x_t$:
 $$
-\mathbf x_{t} = \sqrt{1-\beta_t}\mathbf x_{t-1}+\sqrt{\beta_t}\epsilon_t, 其中\epsilon_t\sim \mathbf N(0,\mathcal I)
+\mathbf x_{t} = \sqrt{1-\beta_t}\mathbf x_{t-1}+\sqrt{\beta_t}\epsilon_t, 其中\epsilon_t\sim \mathcal N(0,\mathcal I)
 $$
 令 $\alpha_t=1-\beta_t, \bar \alpha_t=\prod_{s=1}^t\alpha_s$ 则有
 $$
@@ -128,7 +128,7 @@ $$
 $$
 推广到 $\mathbf x_0$
 $$
-\mathbf x_{t} \sim \mathcal N(\sqrt{\bar \alpha_t}\mathbf x_0,\sqrt{1-\bar \alpha_t}\mathcal I)
+\mathbf x_{t} \sim \mathcal N(\sqrt{\bar \alpha_t}\mathbf x_0,(1-\bar \alpha_t)\mathcal I)
 $$
 逆重参数化得到
 $$
@@ -136,5 +136,54 @@ $$
 $$
 
 ### 前向过程的后验推导
-
-
+我们的目标是推导前向过程的后验分布 $q(\mathbf x_{t-1}|\mathbf x_t)$ ，但是在实践上一般会用 $q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)$ 来近似，因为 $\mathbf x_0$ 是已知的。
+$$
+q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0) =\frac {q(\mathbf x_{t}|\mathbf x_{t-1},\mathbf x_0)q(\mathbf x_{t-1}|\mathbf x_0)}{q(\mathbf x_{t}|\mathbf x_0)} \\
+= \frac {q(\mathbf x_{t}|\mathbf x_{t-1})q(\mathbf x_{t-1}|\mathbf x_0)}{q(\mathbf x_{t}|\mathbf x_0)}
+$$
+带入 $\mathbf x_t \sim \mathcal N(\sqrt{1-\beta_t}\mathbf x_{t-1},\beta_t\mathcal I)$ 以及我们前边推导的结论 $\mathbf x_{t} \sim \mathcal N(\sqrt{\bar \alpha_t}\mathbf x_0,(1-\bar \alpha_t)\mathcal I)$ 可以得到：
+$$
+\frac {q(\mathbf x_{t}|\mathbf x_{t-1})q(\mathbf x_{t-1}|\mathbf x_0)}{q(\mathbf x_{t}|\mathbf x_0)}= \frac {\frac {1}{\sqrt{2\pi\beta_t}}\exp\Big(-\frac {(\mathbf x_t-\sqrt{1-\beta_t}\mathbf x_{t-1})^2}{2\beta_t}\Big)\cdot \frac {1}{\sqrt{2\pi(1-\bar \alpha_{t-1})}}\exp\Big(-\frac {(\mathbf x_{t-1}-\sqrt{\bar \alpha_{t-1}}\mathbf x_0)^2}{2(1-\bar \alpha_{t-1})}\Big)}{\frac {1}{\sqrt{2\pi(1-\bar \alpha_t)}}\exp\Big(-\frac {(\mathbf x_t-\sqrt{\bar \alpha_t}\mathbf x_0)^2}{2(1-\bar \alpha_t)}\Big)}
+$$
+$$
+=\sqrt {\frac {1-\bar \alpha_t}{2\pi(1-\bar \alpha_{t-1})\beta_t}}\exp-\frac 1 2\Big( \frac {(\mathbf x_t-\sqrt{1-\beta_t}\mathbf x_{t-1})^2}{\beta_t}+\frac {(\mathbf x_{t-1}-\sqrt{\bar \alpha_{t-1}}\mathbf x_0)^2}{1-\bar \alpha_{t-1}}-\frac {(\mathbf x_t-\sqrt{\bar \alpha_t}\mathbf x_0)^2}{1-\bar \alpha_t}\Big)
+$$
+注意到，我们的目的是求 $q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)$ 的分布，所以上式可以写成关于 $\mathbf x_{t-1}$ 高斯分布形式：
+$$
+\propto \exp\bigg\{-\frac 1 2\Big[ (\frac {1-\beta_t}{\beta_t}\mathbf+\frac 1{1-\bar \alpha_{t-1}}) \mathbf x_{t-1}^2 -2(\frac {\sqrt{1-\beta_t}\mathbf x_t}{\beta_t}+\frac {\sqrt {\bar \alpha_{t-1}}\mathbf x_0}{1-\bar \alpha_{t-1}})\mathbf x_{t-1}+ C\Big]\bigg\}
+$$
+$$
+=\exp\bigg\{ -\frac 1 2\Big[ \frac {\alpha_t-\alpha_t\bar \alpha_{t-1}+\beta_t}{\beta_t(1-\bar \alpha_t)}\mathbf x_{t-1}^2 -2\frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\sqrt{\bar \alpha_{t-1}}\beta_t\mathbf x_0}{\beta_t(1-\bar\alpha_{t-1})} \mathbf x_{t-1}+ C\Big]\bigg\}
+$$
+令平方项系数为A,线性项系数为B,常数项系数为C，则有
+$$
+A=\frac {\alpha_t-\alpha_t\bar \alpha_{t-1}+\beta_t}{\beta_t(1-\bar \alpha_{t-1})}
+=\frac {1-\bar\alpha_{t}}{\beta_t(1-\bar\alpha_{t-1})}
+$$
+$$
+B=-2 \frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\sqrt{\bar \alpha_{t-1}}\beta_t\mathbf x_0}{\beta_t(1-\bar\alpha_{t-1})}
+$$
+上式可以写成
+$$
+\exp\bigg\{ -\frac 1 2\Big( A\mathbf x_{t-1}^2 + B\mathbf x_{t-1}+C\Big)\bigg\}\\
+=\exp\bigg\{ -\frac 1 2A\Big( \mathbf x_{t-1}+\frac {B}{2A}\Big)^2+C'\bigg\}\\
+= \exp \Big(-\frac {\Big( \mathbf x_{t-1}+\frac {B}{2A}\Big)^2}{2\frac {1}{A}}\Big).C''
+$$
+可以看到，具备高斯分布的性质，所以 $q(\mathbf x_{t-1}|\mathbf x_t,\mathbf x_0)$ 也符合高斯分布，且均值为 $\mu=-\frac {B}{2A}$，方差为 $\sigma^2=\frac {1}{A}$ ，带入A和B得到论文中的式(7)
+$$
+\sigma^2 = \frac {1}{A} = \frac {\beta_t(1-\bar\alpha_{t-1})}{1-\bar\alpha_{t}}
+$$
+$$
+\mu = -\frac {B}{2A}=\frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\sqrt{\bar \alpha_{t-1}}\beta_t\mathbf x_0}{1-\bar\alpha_{t}}
+$$
+我们根据正向过程的x0推导式可以反解出x0的表达式 $\mathbf x_0 = \frac {\mathbf x_t-\sqrt{1-\bar\alpha_t}\hat\epsilon_t}{\sqrt{\bar \alpha_t}}$ ，带入上式化简得到论文中的式(10)(11)
+$$
+\mu = \frac {\sqrt \alpha_t(1-\bar\alpha_{t-1})\mathbf x_t+\beta_t\frac{\mathbf x_t-\sqrt{1-\bar\alpha_t}\hat\epsilon_t}{\sqrt{\alpha_t}}}{1-\bar\alpha_{t}}
+$$
+$$
+=\frac {{\alpha_t(1-\bar\alpha_{t-1})+\beta_t}}{(1-\bar\alpha_{t})\sqrt{\alpha_t}}\mathbf x_t-\frac {\beta_t}{\sqrt{\alpha_t(1-\bar\alpha_t)}}\hat\epsilon_t
+$$
+$$
+=\frac {1}{\sqrt{\bar\alpha_t}}\mathbf (x_t-\frac {\beta_t}{\sqrt{1-\bar\alpha_{t}}}\hat\epsilon_t)
+$$
+注意当我们用反解出x0带入的时候，就不能直接用 $\epsilon_t$ 了，因为 $\epsilon_t$ 是重参数化采样过程引入的，在给定采样结果去反推原分布时，只能用模型去估计，因此反解后的噪音项变成了 $\hat\epsilon_t$
