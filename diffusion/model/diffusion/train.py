@@ -81,7 +81,7 @@ def build_dataloader(*, batch_size: int) -> DataLoader:
     smoke_test = os.environ.get("SMOKE_TEST") == "1"
     if smoke_test:
         images = torch.rand(64, CFG.train.in_channels, CFG.train.image_size, CFG.train.image_size) * 2 - 1
-        return DataLoader(TensorDataset(images), batch_size=min(batch_size, 4), shuffle=True, num_workers=0)
+        return DataLoader(TensorDataset(images), batch_size=batch_size, shuffle=True, num_workers=0)
 
     if CFG.data.dataset_type != "hf":
         raise ValueError(f"unknown dataset_type: {CFG.data.dataset_type}")
@@ -183,7 +183,6 @@ def save_grid(images: Tensor, *, path: str, nrow: int) -> None:
 def main() -> None:
     seed_everything(CFG.train.seed)
     device = get_device()
-    smoke_test = os.environ.get("SMOKE_TEST") == "1"
 
     out_dir = Path(CFG.train.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
