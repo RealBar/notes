@@ -1,111 +1,104 @@
+from __future__ import annotations
+
 import os
+import math
+from pathlib import Path
+
 os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:128")
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", os.environ["PYTORCH_ALLOC_CONF"])
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
+from torch import Tensor, nn
+from torch.optim import AdamW
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision import transforms
-from torchvision.utils import save_image
-from datasets import load_dataset
+from torchvision.utils import make_grid, save_image
+
+from config import CFG
 from dit import DiT
-import glob
-from contextlib import nullcontext
-
-# Hyperparameters
-IMAGE_SIZE = 64
-LR = 1e-4
-EPOCHS = 5
-TIMESTEPS = 1000
-
-DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-
-TOTAL_VRAM_GB = 0.0
-FREE_VRAM_GB = 0.0
-if DEVICE == "cuda":
-    TOTAL_VRAM_GB = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-    free_bytes, total_bytes = torch.cuda.mem_get_info()
-    FREE_VRAM_GB = free_bytes / (1024**3)
-
-SMOKE_TEST = os.environ.get("SMOKE_TEST") == "1"
-FORCE_LOW_MEM = os.environ.get("FORCE_LOW_MEM") == "1"
-
-LOW_VRAM = DEVICE == "cuda" and TOTAL_VRAM_GB <= 10.0
-VERY_LOW_FREE_VRAM = DEVICE == "cuda" and FREE_VRAM_GB > 0 and FREE_VRAM_GB < 1.6
-LOW_MEM = FORCE_LOW_MEM or LOW_VRAM or VERY_LOW_FREE_VRAM or SMOKE_TEST
-
-EFFECTIVE_BATCH_SIZE = 64
-BATCH_SIZE = 2 if VERY_LOW_FREE_VRAM else 8 if LOW_MEM else 64
-GRAD_ACCUM_STEPS = max(1, EFFECTIVE_BATCH_SIZE // BATCH_SIZE)
-
-PATCH_SIZE = 8 if VERY_LOW_FREE_VRAM else 4 if LOW_MEM else 2
-HIDDEN_SIZE = 192 if VERY_LOW_FREE_VRAM else 256 if LOW_MEM else 384
-DEPTH = 6 if VERY_LOW_FREE_VRAM else 8 if LOW_MEM else 12
-NUM_HEADS = 3 if VERY_LOW_FREE_VRAM else 4 if LOW_MEM else 6
-USE_CHECKPOINTING = LOW_MEM
-
-DIT_KWARGS = dict(
-    input_size=IMAGE_SIZE,
-    patch_size=PATCH_SIZE,
-    hidden_size=HIDDEN_SIZE,
-    depth=DEPTH,
-    num_heads=NUM_HEADS,
-    use_checkpointing=USE_CHECKPOINTING,
+from ldm import (
+    AutoencoderKL,
+    EMA,
+    Schedule,
+    ddim_sample,
+    get_device,
+    make_grad_scaler,
+    make_linear_schedule,
+    q_sample,
+    seed_everything,
 )
 
-SAMPLE_N = 2 if VERY_LOW_FREE_VRAM else 4 if LOW_MEM else 8
 
-if SMOKE_TEST:
-    EPOCHS = 1
-    TIMESTEPS = 10
-    GRAD_ACCUM_STEPS = 1
-    SAMPLE_N = 2
+def load_torch(path: str | Path):
+    try:
+        return torch.load(path, map_location="cpu", weights_only=True)
+    except TypeError:
+        return torch.load(path, map_location="cpu")
+    except Exception:
+        return torch.load(path, map_location="cpu", weights_only=False)
 
-if DEVICE == "cuda":
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
 
-def make_autocast_ctx(device):
-    if device == "cuda":
-        if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
-            return lambda **kwargs: torch.amp.autocast(device_type="cuda", **kwargs)
-        return torch.cuda.amp.autocast
-    return lambda **kwargs: nullcontext()
+def load_diffusion_checkpoint(path: Path):
+    payload = load_torch(path)
+    if not isinstance(payload, dict):
+        return {"model": payload}, 0, 0
 
-def make_grad_scaler(device, enabled):
-    if device == "cuda":
-        if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
-            return torch.amp.GradScaler("cuda", enabled=enabled)
-        return torch.cuda.amp.GradScaler(enabled=enabled)
-    class _NoOpScaler:
-        def scale(self, loss):
-            return loss
-        def step(self, optimizer):
-            optimizer.step()
-        def update(self):
-            return
-    return _NoOpScaler()
+    meta = payload.get("meta", {})
+    if not isinstance(meta, dict):
+        meta = {}
+    epoch = int(meta.get("epoch", payload.get("epoch", 0)))
+    global_step = int(meta.get("global_step", payload.get("global_step", 0)))
+    return payload, epoch, global_step
 
-def get_dataloader():
-    if SMOKE_TEST:
-        images = torch.rand(32, 3, IMAGE_SIZE, IMAGE_SIZE) * 2 - 1
-        dataset = TensorDataset(images)
-        return DataLoader(dataset, batch_size=min(BATCH_SIZE, 8), shuffle=True, num_workers=0)
-    # Load dataset from huggingface
-    # We use "nielsr/CelebA-faces"
-    print("Loading dataset...")
-    dataset = load_dataset("nielsr/CelebA-faces", split="train")
-    
-    # Preprocessing
-    transform = transforms.Compose([
-        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
+
+def atomic_torch_save(payload: dict, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    torch.save(payload, tmp)
+    tmp.replace(path)
+
+
+def save_diffusion_checkpoint(
+    *,
+    path: Path,
+    model: nn.Module,
+    ema: EMA,
+    optimizer: AdamW,
+    epoch: int,
+    global_step: int,
+    save_optimizer: bool,
+) -> None:
+    payload: dict = {
+        "model": model.state_dict(),
+        "ema": ema.shadow,
+        "meta": {"epoch": int(epoch), "global_step": int(global_step)},
+    }
+    if save_optimizer:
+        payload["optimizer"] = optimizer.state_dict()
+    atomic_torch_save(payload, path)
+
+
+def build_dataloader(*, batch_size: int) -> DataLoader:
+    smoke_test = os.environ.get("SMOKE_TEST") == "1"
+    if smoke_test:
+        images = torch.rand(64, CFG.train.in_channels, CFG.train.image_size, CFG.train.image_size) * 2 - 1
+        return DataLoader(TensorDataset(images), batch_size=min(batch_size, 4), shuffle=True, num_workers=0)
+
+    if CFG.data.dataset_type != "hf":
+        raise ValueError(f"unknown dataset_type: {CFG.data.dataset_type}")
+
+    from datasets import load_dataset
+
+    dataset = load_dataset(CFG.data.hf_name, split=CFG.data.hf_split)
+    tfm = transforms.Compose(
+        [
+            transforms.Resize((CFG.train.image_size, CFG.train.image_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5] * CFG.train.in_channels, std=[0.5] * CFG.train.in_channels),
+        ]
+    )
 
     def transform_images(examples):
-        examples["pixel_values"] = [transform(image.convert("RGB")) for image in examples["image"]]
+        examples["pixel_values"] = [tfm(image.convert("RGB")) for image in examples["image"]]
         return examples
 
     dataset.set_transform(transform_images)
@@ -113,125 +106,233 @@ def get_dataloader():
     def collate_fn(batch):
         return torch.stack([item["pixel_values"] for item in batch])
 
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=0)
-    return dataloader
+    device = get_device()
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=collate_fn,
+        num_workers=CFG.data.num_workers,
+        pin_memory=device == "cuda",
+    )
 
-class Diffusion:
-    def __init__(self, timesteps=1000, beta_start=1e-4, beta_end=0.02):
-        self.timesteps = timesteps
-        self.beta = torch.linspace(beta_start, beta_end, timesteps).to(DEVICE)
-        self.alpha = 1.0 - self.beta
-        self.alpha_hat = torch.cumprod(self.alpha, dim=0)
 
-    def noise_images(self, x, t):
-        sqrt_alpha_hat = torch.sqrt(self.alpha_hat[t])[:, None, None, None]
-        sqrt_one_minus_alpha_hat = torch.sqrt(1 - self.alpha_hat[t])[:, None, None, None]
-        epsilon = torch.randn_like(x)
-        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * epsilon, epsilon
+def kl_loss(mu: Tensor, logvar: Tensor) -> Tensor:
+    return 0.5 * torch.mean(torch.exp(logvar) + mu**2 - 1.0 - logvar)
 
-    def sample_timesteps(self, n):
-        return torch.randint(low=1, high=self.timesteps, size=(n,)).to(DEVICE)
 
-    def sample(self, model, n):
-        model.eval()
-        amp_enabled = DEVICE == "cuda"
-        amp_dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
-        autocast_ctx = make_autocast_ctx(DEVICE)
-        with torch.no_grad():
-            x = torch.randn((n, 3, IMAGE_SIZE, IMAGE_SIZE), device=DEVICE)
-            for i in reversed(range(1, self.timesteps)):
-                t = (torch.ones(n, device=DEVICE) * i).long()
-                with autocast_ctx(dtype=amp_dtype, cache_enabled=False):
-                    predicted_noise = model(x, t)
-                alpha = self.alpha[t][:, None, None, None]
-                alpha_hat = self.alpha_hat[t][:, None, None, None]
-                beta = self.beta[t][:, None, None, None]
-                if i > 1:
-                    noise = torch.randn_like(x)
-                else:
-                    noise = torch.zeros_like(x)
-                x = 1 / torch.sqrt(alpha) * (x - ((1 - alpha) / (torch.sqrt(1 - alpha_hat))) * predicted_noise) + torch.sqrt(beta) * noise
-        model.train()
-        x = (x.clamp(-1, 1) + 1) / 2
-        return x
+def train_autoencoder(*, device: str, dataloader: DataLoader) -> AutoencoderKL:
+    ae = AutoencoderKL(
+        in_channels=CFG.train.in_channels,
+        base_channels=CFG.ae.base_channels,
+        latent_channels=CFG.ae.latent_channels,
+        downsample_factor=CFG.ae.downsample_factor,
+    ).to(device)
 
-def train():
-    os.makedirs("results", exist_ok=True)
-    
-    dataloader = get_dataloader()
-    
-    model = DiT(**DIT_KWARGS).to(DEVICE)
-    optimizer = optim.AdamW(model.parameters(), lr=LR)
-    loss_fn = nn.MSELoss()
-    diffusion = Diffusion(timesteps=TIMESTEPS)
+    ckpt_path = Path(CFG.ae.ckpt_path)
+    if ckpt_path.exists():
+        payload = load_torch(ckpt_path)
+        state = payload.get("model", payload) if isinstance(payload, dict) else payload
+        ae.load_state_dict(state, strict=True)
+        if isinstance(payload, dict) and set(payload.keys()) != {"model"}:
+            torch.save({"model": ae.state_dict()}, ckpt_path)
+        return ae
 
-    amp_enabled = DEVICE == "cuda"
-    amp_dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
-    autocast_ctx = make_autocast_ctx(DEVICE)
-    scaler = make_grad_scaler(DEVICE, enabled=amp_enabled)
+    optimizer = AdamW(ae.parameters(), lr=CFG.ae.lr)
+    amp_enabled = device == "cuda"
+    scaler = make_grad_scaler(device, enabled=amp_enabled)
+    dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
+    ae.train()
 
-    print(f"Starting training on {DEVICE}...")
-    if DEVICE == "cuda":
-        print(
-            f"CUDA VRAM total/free: {TOTAL_VRAM_GB:.2f}/{FREE_VRAM_GB:.2f} GB | low_mem={LOW_MEM} | batch={BATCH_SIZE} | accum={GRAD_ACCUM_STEPS}"
-        )
+    for epoch in range(int(CFG.ae.epochs)):
+        for step, batch in enumerate(dataloader):
+            x = batch[0] if isinstance(batch, (tuple, list)) else batch
+            x = x.to(device)
 
+            if amp_enabled:
+                with torch.amp.autocast(device_type="cuda", dtype=dtype, cache_enabled=False):
+                    recon, mu, logvar = ae(x)
+                    recon_loss = torch.mean((recon - x) ** 2)
+                    loss = recon_loss + CFG.ae.kl_weight * kl_loss(mu, logvar)
+            else:
+                recon, mu, logvar = ae(x)
+                recon_loss = torch.mean((recon - x) ** 2)
+                loss = recon_loss + CFG.ae.kl_weight * kl_loss(mu, logvar)
+
+            optimizer.zero_grad(set_to_none=True)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            if step % 50 == 0:
+                print(f"[AE] epoch={epoch+1} step={step} loss={loss.item():.6f} recon={recon_loss.item():.6f}")
+
+    ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({"model": ae.state_dict()}, ckpt_path)
+    return ae
+
+
+def save_grid(images: Tensor, *, path: str, nrow: int) -> None:
+    images = (images * 0.5 + 0.5).clamp(0, 1)
+    grid = make_grid(images, nrow=nrow, padding=2)
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    save_image(grid, out)
+
+
+def main() -> None:
+    seed_everything(CFG.train.seed)
+    device = get_device()
+    smoke_test = os.environ.get("SMOKE_TEST") == "1"
+
+    out_dir = Path(CFG.train.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    ae_loader = build_dataloader(batch_size=CFG.ae.batch_size)
+    ae = train_autoencoder(device=device, dataloader=ae_loader)
+    ae.eval()
+    for p in ae.parameters():
+        p.requires_grad_(False)
+
+    latent_size = CFG.train.image_size // CFG.ae.downsample_factor
+    if latent_size * CFG.ae.downsample_factor != CFG.train.image_size:
+        raise ValueError("image_size must be divisible by downsample_factor")
+
+    model = DiT(
+        input_size=latent_size,
+        patch_size=CFG.dit.patch_size,
+        in_channels=CFG.ae.latent_channels,
+        hidden_size=CFG.dit.hidden_size,
+        depth=CFG.dit.depth,
+        num_heads=CFG.dit.num_heads,
+        mlp_ratio=CFG.dit.mlp_ratio,
+        use_checkpointing=CFG.dit.use_checkpointing,
+    ).to(device)
+
+    ema = EMA(model, decay=CFG.train.ema_decay)
+    optimizer = AdamW(model.parameters(), lr=CFG.train.lr)
+    schedule = make_linear_schedule(
+        num_train_timesteps=CFG.diffusion.num_train_timesteps,
+        beta_start=CFG.diffusion.beta_start,
+        beta_end=CFG.diffusion.beta_end,
+        device=device,
+    )
+
+    ckpt_path = Path(CFG.train.diffusion_ckpt_path)
     start_epoch = 0
-    if not SMOKE_TEST:
-        checkpoints = sorted(glob.glob("results/dit_epoch_*.pt"))
-        if checkpoints:
-            latest_checkpoint = checkpoints[-1]
-            print(f"Resuming from {latest_checkpoint}...")
-            try:
-                model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE))
-                try:
-                    start_epoch = int(latest_checkpoint.split("_")[-1].split(".")[0])
-                except ValueError:
-                    pass
-            except RuntimeError as e:
-                print(f"Failed to load checkpoint {latest_checkpoint}: {e}")
-                print("Starting training from scratch...")
-                start_epoch = 0
-    
-    for epoch in range(start_epoch, EPOCHS):
+    global_step = 0
+    if ckpt_path.exists():
+        payload, start_epoch, global_step = load_diffusion_checkpoint(ckpt_path)
+        if isinstance(payload, dict) and "model" in payload:
+            model.load_state_dict(payload["model"], strict=True)
+            if "ema" in payload and isinstance(payload["ema"], dict):
+                ema.shadow = payload["ema"]
+            if CFG.train.save_optimizer and "optimizer" in payload:
+                optimizer.load_state_dict(payload["optimizer"])
+
+    train_loader = build_dataloader(batch_size=CFG.train.batch_size)
+
+    amp_enabled = device == "cuda"
+    scaler = make_grad_scaler(device, enabled=amp_enabled)
+    dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
+    accum_steps = max(1, int(CFG.train.effective_batch_size // CFG.train.batch_size))
+    mse = nn.MSELoss()
+
+    if device == "cuda":
+        free_bytes, total_bytes = torch.cuda.mem_get_info()
+        print(
+            f"device=cuda total/free={total_bytes/(1024**3):.2f}/{free_bytes/(1024**3):.2f}GB "
+            f"batch={CFG.train.batch_size} accum={accum_steps} latent={CFG.ae.latent_channels}x{latent_size}x{latent_size}"
+        )
+    else:
+        print(f"device={device} batch={CFG.train.batch_size} accum={accum_steps}")
+
+    if start_epoch > 0 or global_step > 0:
+        print(f"resuming: epoch={start_epoch} global_step={global_step}")
+
+    for epoch in range(int(start_epoch), int(CFG.train.epochs)):
         model.train()
         optimizer.zero_grad(set_to_none=True)
-        for i, images in enumerate(dataloader):
-            if isinstance(images, (tuple, list)):
-                images = images[0]
-            images = images.to(DEVICE, non_blocking=True)
 
-            with autocast_ctx(dtype=amp_dtype, cache_enabled=False):
-                t = diffusion.sample_timesteps(images.shape[0])
-                x_t, noise = diffusion.noise_images(images, t)
-                predicted_noise = model(x_t, t)
-                loss = loss_fn(noise.float(), predicted_noise.float())
-                loss = loss / GRAD_ACCUM_STEPS
+        running = 0.0
+        steps = 0
+
+        for step, batch in enumerate(train_loader):
+            x = batch[0] if isinstance(batch, (tuple, list)) else batch
+            x = x.to(device)
+
+            with torch.no_grad():
+                mu, logvar = ae.encode(x)
+                z = ae.reparameterize(mu, logvar)
+                z = z * CFG.diffusion.latent_scale
+
+            noise = torch.randn_like(z)
+            t = torch.randint(0, CFG.diffusion.num_train_timesteps, (z.shape[0],), device=device)
+            zt = q_sample(x0=z, noise=noise, t=t, schedule=schedule)
+
+            if amp_enabled:
+                with torch.amp.autocast(device_type="cuda", dtype=dtype, cache_enabled=False):
+                    pred = model(zt, t)
+                    loss = mse(pred.float(), noise.float()) / accum_steps
+            else:
+                pred = model(zt, t)
+                loss = mse(pred, noise) / accum_steps
 
             scaler.scale(loss).backward()
 
-            if (i + 1) % GRAD_ACCUM_STEPS == 0:
+            if (step + 1) % accum_steps == 0:
+                if CFG.train.grad_clip_norm > 0:
+                    if amp_enabled and hasattr(scaler, "unscale_"):
+                        scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), float(CFG.train.grad_clip_norm))
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
+                ema.update(model)
+                global_step += 1
 
-            if i % 10 == 0:
-                print(f"Epoch {epoch+1} | Step {i} | Loss: {(loss.item() * GRAD_ACCUM_STEPS):.4f}")
+            running += float(loss.item() * accum_steps)
+            steps += 1
+            if step % 50 == 0:
+                print(f"epoch={epoch+1} step={step} loss={running/max(1,steps):.6f}")
 
-        if len(dataloader) % GRAD_ACCUM_STEPS != 0:
+        if steps % accum_steps != 0:
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
-        
-        # Inference
-        print(f"Sampling images for Epoch {epoch+1}...")
-        sampled_images = diffusion.sample(model, n=SAMPLE_N)
-        save_image(sampled_images, f"results/sample_epoch_{epoch+1}.png")
+            ema.update(model)
+            global_step += 1
 
-        # Save model checkpoint
-        save_path = f"results/dit_epoch_{epoch+1}.pt"
-        torch.save(model.state_dict(), save_path)
-        print(f"Model saved at {save_path}")
+        if (epoch + 1) % int(CFG.train.sample_every_epochs) == 0:
+            model_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+            ema.copy_to(model)
+            model.eval()
+            latents = ddim_sample(
+                model=model,
+                shape=(CFG.train.sample_n, CFG.ae.latent_channels, latent_size, latent_size),
+                schedule=schedule,
+                ddim_steps=CFG.diffusion.ddim_steps,
+                eta=CFG.diffusion.ddim_eta,
+                device=device,
+                dtype=dtype if amp_enabled else torch.float32,
+                seed=CFG.train.seed,
+            )
+            latents = latents / CFG.diffusion.latent_scale
+            images = ae.decode(latents).detach().cpu()
+            save_grid(images, path=str(out_dir / f"sample_epoch_{epoch+1}.png"), nrow=int(math.sqrt(CFG.train.sample_n)))
+            model.load_state_dict(model_state, strict=True)
+
+        if (epoch + 1) % int(CFG.train.save_every_epochs) == 0:
+            save_diffusion_checkpoint(
+                path=ckpt_path,
+                model=model,
+                ema=ema,
+                optimizer=optimizer,
+                epoch=epoch + 1,
+                global_step=global_step,
+                save_optimizer=bool(CFG.train.save_optimizer),
+            )
+
 
 if __name__ == "__main__":
-    train()
+    main()
