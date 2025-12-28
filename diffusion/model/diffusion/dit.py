@@ -66,7 +66,7 @@ class DiTBlock(nn.Module):
         # Self-Attention
         x_norm1 = self.norm1(x)
         x_norm1 = x_norm1 * (1 + scale_msa.unsqueeze(1)) + shift_msa.unsqueeze(1)
-        attn_out, _ = self.attn(x_norm1, x_norm1, x_norm1)
+        attn_out = self.attn(x_norm1, x_norm1, x_norm1, need_weights=False)[0]
         x = x + gate_msa.unsqueeze(1) * attn_out
         
         # MLP

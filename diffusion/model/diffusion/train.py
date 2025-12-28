@@ -1,5 +1,6 @@
 import os
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:128")
+os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:128")
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", os.environ["PYTORCH_ALLOC_CONF"])
 
 import torch
 import torch.nn as nn
@@ -28,10 +29,11 @@ if DEVICE == "cuda":
     FREE_VRAM_GB = free_bytes / (1024**3)
 
 SMOKE_TEST = os.environ.get("SMOKE_TEST") == "1"
+FORCE_LOW_MEM = os.environ.get("FORCE_LOW_MEM") == "1"
 
-LOW_VRAM = DEVICE == "cuda" and TOTAL_VRAM_GB <= 7.5
+LOW_VRAM = DEVICE == "cuda" and TOTAL_VRAM_GB <= 10.0
 VERY_LOW_FREE_VRAM = DEVICE == "cuda" and FREE_VRAM_GB > 0 and FREE_VRAM_GB < 1.6
-LOW_MEM = LOW_VRAM or VERY_LOW_FREE_VRAM or SMOKE_TEST
+LOW_MEM = FORCE_LOW_MEM or LOW_VRAM or VERY_LOW_FREE_VRAM or SMOKE_TEST
 
 EFFECTIVE_BATCH_SIZE = 64
 BATCH_SIZE = 2 if VERY_LOW_FREE_VRAM else 8 if LOW_MEM else 64
@@ -63,6 +65,27 @@ if SMOKE_TEST:
 if DEVICE == "cuda":
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+
+def make_autocast_ctx(device):
+    if device == "cuda":
+        if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+            return lambda **kwargs: torch.amp.autocast(device_type="cuda", **kwargs)
+        return torch.cuda.amp.autocast
+    return lambda **kwargs: nullcontext()
+
+def make_grad_scaler(device, enabled):
+    if device == "cuda":
+        if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+            return torch.amp.GradScaler("cuda", enabled=enabled)
+        return torch.cuda.amp.GradScaler(enabled=enabled)
+    class _NoOpScaler:
+        def scale(self, loss):
+            return loss
+        def step(self, optimizer):
+            optimizer.step()
+        def update(self):
+            return
+    return _NoOpScaler()
 
 def get_dataloader():
     if SMOKE_TEST:
@@ -113,7 +136,7 @@ class Diffusion:
         model.eval()
         amp_enabled = DEVICE == "cuda"
         amp_dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
-        autocast_ctx = torch.cuda.amp.autocast if amp_enabled else (lambda **kwargs: nullcontext())
+        autocast_ctx = make_autocast_ctx(DEVICE)
         with torch.no_grad():
             x = torch.randn((n, 3, IMAGE_SIZE, IMAGE_SIZE), device=DEVICE)
             for i in reversed(range(1, self.timesteps)):
@@ -144,8 +167,8 @@ def train():
 
     amp_enabled = DEVICE == "cuda"
     amp_dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
-    autocast_ctx = torch.cuda.amp.autocast if amp_enabled else (lambda **kwargs: nullcontext())
-    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
+    autocast_ctx = make_autocast_ctx(DEVICE)
+    scaler = make_grad_scaler(DEVICE, enabled=amp_enabled)
 
     print(f"Starting training on {DEVICE}...")
     if DEVICE == "cuda":
