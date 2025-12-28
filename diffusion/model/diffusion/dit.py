@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import math
+from torch.utils.checkpoint import checkpoint
 
 class TimestepEmbedder(nn.Module):
     """
@@ -111,6 +112,7 @@ class DiT(nn.Module):
         depth=12,
         num_heads=6,
         mlp_ratio=4.0,
+        use_checkpointing=False,
     ):
         super().__init__()
         self.input_size = input_size
@@ -118,6 +120,7 @@ class DiT(nn.Module):
         self.in_channels = in_channels
         self.out_channels = in_channels # Predicting noise, so same channels as input
         self.hidden_size = hidden_size
+        self.use_checkpointing = use_checkpointing
         
         self.x_embed = nn.Conv2d(in_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
         
@@ -180,9 +183,15 @@ class DiT(nn.Module):
         x = x + self.pos_embed
         
         t = self.t_embedder(t) # (N, hidden_size)
-        
+
         for block in self.blocks:
-            x = block(x, t)
+            if self.training and self.use_checkpointing:
+                try:
+                    x = checkpoint(block, x, t, use_reentrant=False)
+                except TypeError:
+                    x = checkpoint(block, x, t)
+            else:
+                x = block(x, t)
             
         x = self.final_layer(x, t)
         x = self.unpatchify(x)

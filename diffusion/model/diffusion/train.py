@@ -1,25 +1,67 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 from torchvision import transforms
 from torchvision.utils import save_image
 from datasets import load_dataset
 from dit import DiT
 import os
 import glob
+from contextlib import nullcontext
 
 # Hyperparameters
 IMAGE_SIZE = 64
-BATCH_SIZE = 64
 LR = 1e-4
 EPOCHS = 5
 TIMESTEPS = 1000
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-if torch.backends.mps.is_available():
-    DEVICE = "mps"
+
+DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
+TOTAL_VRAM_GB = 0.0
+if DEVICE == "cuda":
+    TOTAL_VRAM_GB = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+
+LOW_VRAM = DEVICE == "cuda" and TOTAL_VRAM_GB <= 7.5
+SMOKE_TEST = os.environ.get("SMOKE_TEST") == "1"
+LOW_MEM = LOW_VRAM or SMOKE_TEST
+
+EFFECTIVE_BATCH_SIZE = 64
+BATCH_SIZE = 8 if LOW_MEM else 64
+GRAD_ACCUM_STEPS = max(1, EFFECTIVE_BATCH_SIZE // BATCH_SIZE)
+
+PATCH_SIZE = 4 if LOW_MEM else 2
+HIDDEN_SIZE = 256 if LOW_MEM else 384
+DEPTH = 8 if LOW_MEM else 12
+NUM_HEADS = 4 if LOW_MEM else 6
+USE_CHECKPOINTING = LOW_MEM
+
+DIT_KWARGS = dict(
+    input_size=IMAGE_SIZE,
+    patch_size=PATCH_SIZE,
+    hidden_size=HIDDEN_SIZE,
+    depth=DEPTH,
+    num_heads=NUM_HEADS,
+    use_checkpointing=USE_CHECKPOINTING,
+)
+
+SAMPLE_N = 4 if LOW_MEM else 8
+
+if SMOKE_TEST:
+    EPOCHS = 1
+    TIMESTEPS = 10
+    GRAD_ACCUM_STEPS = 1
+    SAMPLE_N = 2
+
+if DEVICE == "cuda":
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
 
 def get_dataloader():
+    if SMOKE_TEST:
+        images = torch.rand(32, 3, IMAGE_SIZE, IMAGE_SIZE) * 2 - 1
+        dataset = TensorDataset(images)
+        return DataLoader(dataset, batch_size=min(BATCH_SIZE, 8), shuffle=True, num_workers=0)
     # Load dataset from huggingface
     # We use "nielsr/CelebA-faces"
     print("Loading dataset...")
@@ -62,11 +104,15 @@ class Diffusion:
 
     def sample(self, model, n):
         model.eval()
+        amp_enabled = DEVICE == "cuda"
+        amp_dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
+        autocast_ctx = torch.cuda.amp.autocast if amp_enabled else (lambda **kwargs: nullcontext())
         with torch.no_grad():
-            x = torch.randn((n, 3, IMAGE_SIZE, IMAGE_SIZE)).to(DEVICE)
+            x = torch.randn((n, 3, IMAGE_SIZE, IMAGE_SIZE), device=DEVICE)
             for i in reversed(range(1, self.timesteps)):
-                t = (torch.ones(n) * i).long().to(DEVICE)
-                predicted_noise = model(x, t)
+                t = (torch.ones(n, device=DEVICE) * i).long()
+                with autocast_ctx(dtype=amp_dtype):
+                    predicted_noise = model(x, t)
                 alpha = self.alpha[t][:, None, None, None]
                 alpha_hat = self.alpha_hat[t][:, None, None, None]
                 beta = self.beta[t][:, None, None, None]
@@ -84,49 +130,70 @@ def train():
     
     dataloader = get_dataloader()
     
-    model = DiT(input_size=IMAGE_SIZE).to(DEVICE)
+    model = DiT(**DIT_KWARGS).to(DEVICE)
     optimizer = optim.AdamW(model.parameters(), lr=LR)
     loss_fn = nn.MSELoss()
     diffusion = Diffusion(timesteps=TIMESTEPS)
 
+    amp_enabled = DEVICE == "cuda"
+    amp_dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
+    autocast_ctx = torch.cuda.amp.autocast if amp_enabled else (lambda **kwargs: nullcontext())
+    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
+
     print(f"Starting training on {DEVICE}...")
+    if DEVICE == "cuda":
+        print(f"CUDA VRAM: {TOTAL_VRAM_GB:.2f} GB | low_vram={LOW_VRAM} | batch={BATCH_SIZE} | accum={GRAD_ACCUM_STEPS}")
 
     start_epoch = 0
-    checkpoints = sorted(glob.glob("results/dit_epoch_*.pt"))
-    if checkpoints:
-        latest_checkpoint = checkpoints[-1]
-        print(f"Resuming from {latest_checkpoint}...")
-        try:
-            model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE))
+    if not SMOKE_TEST:
+        checkpoints = sorted(glob.glob("results/dit_epoch_*.pt"))
+        if checkpoints:
+            latest_checkpoint = checkpoints[-1]
+            print(f"Resuming from {latest_checkpoint}...")
             try:
-                start_epoch = int(latest_checkpoint.split("_")[-1].split(".")[0])
-            except ValueError:
-                pass
-        except RuntimeError as e:
-            print(f"Failed to load checkpoint {latest_checkpoint}: {e}")
-            print("Starting training from scratch...")
-            start_epoch = 0
+                model.load_state_dict(torch.load(latest_checkpoint, map_location=DEVICE))
+                try:
+                    start_epoch = int(latest_checkpoint.split("_")[-1].split(".")[0])
+                except ValueError:
+                    pass
+            except RuntimeError as e:
+                print(f"Failed to load checkpoint {latest_checkpoint}: {e}")
+                print("Starting training from scratch...")
+                start_epoch = 0
     
     for epoch in range(start_epoch, EPOCHS):
         model.train()
+        optimizer.zero_grad(set_to_none=True)
         for i, images in enumerate(dataloader):
-            images = images.to(DEVICE)
-            t = diffusion.sample_timesteps(images.shape[0])
-            x_t, noise = diffusion.noise_images(images, t)
-            
-            predicted_noise = model(x_t, t)
-            loss = loss_fn(noise, predicted_noise)
+            if isinstance(images, (tuple, list)):
+                images = images[0]
+            images = images.to(DEVICE, non_blocking=True)
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            with autocast_ctx(dtype=amp_dtype):
+                t = diffusion.sample_timesteps(images.shape[0])
+                x_t, noise = diffusion.noise_images(images, t)
+                predicted_noise = model(x_t, t)
+                loss = loss_fn(noise.float(), predicted_noise.float())
+                loss = loss / GRAD_ACCUM_STEPS
+
+            scaler.scale(loss).backward()
+
+            if (i + 1) % GRAD_ACCUM_STEPS == 0:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
 
             if i % 10 == 0:
-                print(f"Epoch {epoch+1} | Step {i} | Loss: {loss.item():.4f}")
+                print(f"Epoch {epoch+1} | Step {i} | Loss: {(loss.item() * GRAD_ACCUM_STEPS):.4f}")
+
+        if len(dataloader) % GRAD_ACCUM_STEPS != 0:
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
         
         # Inference
         print(f"Sampling images for Epoch {epoch+1}...")
-        sampled_images = diffusion.sample(model, n=8)
+        sampled_images = diffusion.sample(model, n=SAMPLE_N)
         save_image(sampled_images, f"results/sample_epoch_{epoch+1}.png")
 
         # Save model checkpoint

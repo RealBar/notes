@@ -1,7 +1,7 @@
 import torch
 from torchvision.utils import save_image
 from dit import DiT
-from train import Diffusion, IMAGE_SIZE, TIMESTEPS, DEVICE
+from train import Diffusion, IMAGE_SIZE, TIMESTEPS, DEVICE, DIT_KWARGS
 import argparse
 import os
 import glob
@@ -17,7 +17,7 @@ def inference(checkpoint_path=None, num_images=8):
     
     print(f"Loading checkpoint: {checkpoint_path}")
     
-    model = DiT(input_size=IMAGE_SIZE).to(DEVICE)
+    model = DiT(**DIT_KWARGS).to(DEVICE)
     ckpt = torch.load(checkpoint_path, map_location=DEVICE)
     try:
         model.load_state_dict(ckpt)
