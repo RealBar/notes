@@ -1,3 +1,6 @@
+import os
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:128")
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -6,7 +9,6 @@ from torchvision import transforms
 from torchvision.utils import save_image
 from datasets import load_dataset
 from dit import DiT
-import os
 import glob
 from contextlib import nullcontext
 
@@ -19,21 +21,26 @@ TIMESTEPS = 1000
 DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
 TOTAL_VRAM_GB = 0.0
+FREE_VRAM_GB = 0.0
 if DEVICE == "cuda":
     TOTAL_VRAM_GB = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+    free_bytes, total_bytes = torch.cuda.mem_get_info()
+    FREE_VRAM_GB = free_bytes / (1024**3)
+
+SMOKE_TEST = os.environ.get("SMOKE_TEST") == "1"
 
 LOW_VRAM = DEVICE == "cuda" and TOTAL_VRAM_GB <= 7.5
-SMOKE_TEST = os.environ.get("SMOKE_TEST") == "1"
-LOW_MEM = LOW_VRAM or SMOKE_TEST
+VERY_LOW_FREE_VRAM = DEVICE == "cuda" and FREE_VRAM_GB > 0 and FREE_VRAM_GB < 1.6
+LOW_MEM = LOW_VRAM or VERY_LOW_FREE_VRAM or SMOKE_TEST
 
 EFFECTIVE_BATCH_SIZE = 64
-BATCH_SIZE = 8 if LOW_MEM else 64
+BATCH_SIZE = 2 if VERY_LOW_FREE_VRAM else 8 if LOW_MEM else 64
 GRAD_ACCUM_STEPS = max(1, EFFECTIVE_BATCH_SIZE // BATCH_SIZE)
 
-PATCH_SIZE = 4 if LOW_MEM else 2
-HIDDEN_SIZE = 256 if LOW_MEM else 384
-DEPTH = 8 if LOW_MEM else 12
-NUM_HEADS = 4 if LOW_MEM else 6
+PATCH_SIZE = 8 if VERY_LOW_FREE_VRAM else 4 if LOW_MEM else 2
+HIDDEN_SIZE = 192 if VERY_LOW_FREE_VRAM else 256 if LOW_MEM else 384
+DEPTH = 6 if VERY_LOW_FREE_VRAM else 8 if LOW_MEM else 12
+NUM_HEADS = 3 if VERY_LOW_FREE_VRAM else 4 if LOW_MEM else 6
 USE_CHECKPOINTING = LOW_MEM
 
 DIT_KWARGS = dict(
@@ -45,7 +52,7 @@ DIT_KWARGS = dict(
     use_checkpointing=USE_CHECKPOINTING,
 )
 
-SAMPLE_N = 4 if LOW_MEM else 8
+SAMPLE_N = 2 if VERY_LOW_FREE_VRAM else 4 if LOW_MEM else 8
 
 if SMOKE_TEST:
     EPOCHS = 1
@@ -111,7 +118,7 @@ class Diffusion:
             x = torch.randn((n, 3, IMAGE_SIZE, IMAGE_SIZE), device=DEVICE)
             for i in reversed(range(1, self.timesteps)):
                 t = (torch.ones(n, device=DEVICE) * i).long()
-                with autocast_ctx(dtype=amp_dtype):
+                with autocast_ctx(dtype=amp_dtype, cache_enabled=False):
                     predicted_noise = model(x, t)
                 alpha = self.alpha[t][:, None, None, None]
                 alpha_hat = self.alpha_hat[t][:, None, None, None]
@@ -142,7 +149,9 @@ def train():
 
     print(f"Starting training on {DEVICE}...")
     if DEVICE == "cuda":
-        print(f"CUDA VRAM: {TOTAL_VRAM_GB:.2f} GB | low_vram={LOW_VRAM} | batch={BATCH_SIZE} | accum={GRAD_ACCUM_STEPS}")
+        print(
+            f"CUDA VRAM total/free: {TOTAL_VRAM_GB:.2f}/{FREE_VRAM_GB:.2f} GB | low_mem={LOW_MEM} | batch={BATCH_SIZE} | accum={GRAD_ACCUM_STEPS}"
+        )
 
     start_epoch = 0
     if not SMOKE_TEST:
@@ -169,7 +178,7 @@ def train():
                 images = images[0]
             images = images.to(DEVICE, non_blocking=True)
 
-            with autocast_ctx(dtype=amp_dtype):
+            with autocast_ctx(dtype=amp_dtype, cache_enabled=False):
                 t = diffusion.sample_timesteps(images.shape[0])
                 x_t, noise = diffusion.noise_images(images, t)
                 predicted_noise = model(x_t, t)
