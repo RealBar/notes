@@ -21,6 +21,7 @@ from ldm import (
     Schedule,
     ddim_sample,
     get_device,
+    make_autocast,
     make_grad_scaler,
     make_linear_schedule,
     q_sample,
@@ -146,6 +147,7 @@ def train_autoencoder(*, device: str, dataloader: DataLoader) -> AutoencoderKL:
     amp_enabled = device == "cuda"
     scaler = make_grad_scaler(device, enabled=amp_enabled)
     dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
+    autocast_ctx = make_autocast(device)
     ae.train()
 
     for epoch in range(int(CFG.ae.epochs)):
@@ -153,12 +155,7 @@ def train_autoencoder(*, device: str, dataloader: DataLoader) -> AutoencoderKL:
             x = batch[0] if isinstance(batch, (tuple, list)) else batch
             x = x.to(device)
 
-            if amp_enabled:
-                with torch.amp.autocast(device_type="cuda", dtype=dtype, cache_enabled=False):
-                    recon, mu, logvar = ae(x)
-                    recon_loss = torch.mean((recon - x) ** 2)
-                    loss = recon_loss + CFG.ae.kl_weight * kl_loss(mu, logvar)
-            else:
+            with autocast_ctx(dtype=dtype, cache_enabled=False):
                 recon, mu, logvar = ae(x)
                 recon_loss = torch.mean((recon - x) ** 2)
                 loss = recon_loss + CFG.ae.kl_weight * kl_loss(mu, logvar)
@@ -241,6 +238,7 @@ def main() -> None:
     amp_enabled = device == "cuda"
     scaler = make_grad_scaler(device, enabled=amp_enabled)
     dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
+    autocast_ctx = make_autocast(device)
     accum_steps = 1 if smoke_test else max(1, int(CFG.train.effective_batch_size // CFG.train.batch_size))
     mse = nn.MSELoss()
 
@@ -277,13 +275,12 @@ def main() -> None:
             t = torch.randint(0, CFG.diffusion.num_train_timesteps, (z.shape[0],), device=device)
             zt = q_sample(x0=z, noise=noise, t=t, schedule=schedule)
 
-            if amp_enabled:
-                with torch.amp.autocast(device_type="cuda", dtype=dtype, cache_enabled=False):
-                    pred = model(zt, t)
-                    loss = mse(pred.float(), noise.float()) / accum_steps
-            else:
+            with autocast_ctx(dtype=dtype, cache_enabled=False):
                 pred = model(zt, t)
-                loss = mse(pred, noise) / accum_steps
+                if amp_enabled:
+                    loss = mse(pred.float(), noise.float()) / accum_steps
+                else:
+                    loss = mse(pred, noise) / accum_steps
 
             scaler.scale(loss).backward()
 
