@@ -242,6 +242,8 @@ class EMA:
                 if k not in self.shadow:
                     self.shadow[k] = v.detach().clone()
                 else:
+                    if self.shadow[k].device != v.device:
+                        self.shadow[k] = self.shadow[k].to(v.device)
                     self.shadow[k].mul_(self.decay).add_(v.detach(), alpha=1 - self.decay)
 
     def copy_to(self, model: nn.Module) -> None:

@@ -67,11 +67,9 @@ def save_diffusion_checkpoint(
     global_step: int,
     save_optimizer: bool,
 ) -> None:
-    payload: dict = {
-        "model": model.state_dict(),
-        "ema": ema.shadow,
-        "meta": {"epoch": int(epoch), "global_step": int(global_step)},
-    }
+    model_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+    ema_state = {k: v.detach().cpu() for k, v in ema.shadow.items()}
+    payload: dict = {"model": model_state, "ema": ema_state, "meta": {"epoch": int(epoch), "global_step": int(global_step)}}
     if save_optimizer:
         payload["optimizer"] = optimizer.state_dict()
     atomic_torch_save(payload, path)
@@ -80,8 +78,10 @@ def save_diffusion_checkpoint(
 def build_dataloader(*, batch_size: int) -> DataLoader:
     smoke_test = os.environ.get("SMOKE_TEST") == "1"
     if smoke_test:
-        images = torch.rand(64, CFG.train.in_channels, CFG.train.image_size, CFG.train.image_size) * 2 - 1
-        return DataLoader(TensorDataset(images), batch_size=batch_size, shuffle=True, num_workers=0)
+        n = int(os.environ.get("SMOKE_N", "8"))
+        n = max(1, min(n, 8))
+        images = torch.rand(n, CFG.train.in_channels, CFG.train.image_size, CFG.train.image_size) * 2 - 1
+        return DataLoader(TensorDataset(images), batch_size=n, shuffle=False, num_workers=0)
 
     if CFG.data.dataset_type != "hf":
         raise ValueError(f"unknown dataset_type: {CFG.data.dataset_type}")
@@ -130,12 +130,16 @@ def train_autoencoder(*, device: str, dataloader: DataLoader) -> AutoencoderKL:
     ).to(device)
 
     ckpt_path = Path(CFG.ae.ckpt_path)
+    smoke_test = os.environ.get("SMOKE_TEST") == "1"
     if ckpt_path.exists():
         payload = load_torch(ckpt_path)
         state = payload.get("model", payload) if isinstance(payload, dict) else payload
         ae.load_state_dict(state, strict=True)
         if isinstance(payload, dict) and set(payload.keys()) != {"model"}:
             torch.save({"model": ae.state_dict()}, ckpt_path)
+        return ae
+
+    if smoke_test:
         return ae
 
     optimizer = AdamW(ae.parameters(), lr=CFG.ae.lr)
@@ -183,6 +187,9 @@ def save_grid(images: Tensor, *, path: str, nrow: int) -> None:
 def main() -> None:
     seed_everything(CFG.train.seed)
     device = get_device()
+    smoke_test = os.environ.get("SMOKE_TEST") == "1"
+    smoke_steps = int(os.environ.get("SMOKE_STEPS", "1"))
+    smoke_steps = max(1, min(smoke_steps, 5))
 
     out_dir = Path(CFG.train.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -220,12 +227,12 @@ def main() -> None:
     ckpt_path = Path(CFG.train.diffusion_ckpt_path)
     start_epoch = 0
     global_step = 0
-    if ckpt_path.exists():
+    if ckpt_path.exists() and not smoke_test:
         payload, start_epoch, global_step = load_diffusion_checkpoint(ckpt_path)
         if isinstance(payload, dict) and "model" in payload:
             model.load_state_dict(payload["model"], strict=True)
             if "ema" in payload and isinstance(payload["ema"], dict):
-                ema.shadow = payload["ema"]
+                ema.shadow = {k: v.to(device) for k, v in payload["ema"].items()}
             if CFG.train.save_optimizer and "optimizer" in payload:
                 optimizer.load_state_dict(payload["optimizer"])
 
@@ -234,7 +241,7 @@ def main() -> None:
     amp_enabled = device == "cuda"
     scaler = make_grad_scaler(device, enabled=amp_enabled)
     dtype = torch.bfloat16 if amp_enabled and torch.cuda.is_bf16_supported() else torch.float16
-    accum_steps = max(1, int(CFG.train.effective_batch_size // CFG.train.batch_size))
+    accum_steps = 1 if smoke_test else max(1, int(CFG.train.effective_batch_size // CFG.train.batch_size))
     mse = nn.MSELoss()
 
     if device == "cuda":
@@ -249,7 +256,8 @@ def main() -> None:
     if start_epoch > 0 or global_step > 0:
         print(f"resuming: epoch={start_epoch} global_step={global_step}")
 
-    for epoch in range(int(start_epoch), int(CFG.train.epochs)):
+    end_epoch = int(start_epoch) + 1 if smoke_test else int(CFG.train.epochs)
+    for epoch in range(int(start_epoch), end_epoch):
         model.train()
         optimizer.zero_grad(set_to_none=True)
 
@@ -295,6 +303,9 @@ def main() -> None:
             if step % 50 == 0:
                 print(f"epoch={epoch+1} step={step} loss={running/max(1,steps):.6f}")
 
+            if smoke_test and step + 1 >= smoke_steps:
+                break
+
         if steps % accum_steps != 0:
             scaler.step(optimizer)
             scaler.update()
@@ -302,7 +313,7 @@ def main() -> None:
             ema.update(model)
             global_step += 1
 
-        if (epoch + 1) % int(CFG.train.sample_every_epochs) == 0:
+        if not smoke_test and (epoch + 1) % int(CFG.train.sample_every_epochs) == 0:
             model_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
             ema.copy_to(model)
             model.eval()
@@ -321,7 +332,7 @@ def main() -> None:
             save_grid(images, path=str(out_dir / f"sample_epoch_{epoch+1}.png"), nrow=int(math.sqrt(CFG.train.sample_n)))
             model.load_state_dict(model_state, strict=True)
 
-        if (epoch + 1) % int(CFG.train.save_every_epochs) == 0:
+        if not smoke_test and (epoch + 1) % int(CFG.train.save_every_epochs) == 0:
             save_diffusion_checkpoint(
                 path=ckpt_path,
                 model=model,
