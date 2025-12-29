@@ -12,8 +12,10 @@ from torch.nn import functional as F
 def get_device() -> str:
     if torch.cuda.is_available():
         return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
+    mps_backend = getattr(torch.backends, "mps", None)
+    if mps_backend is not None and getattr(mps_backend, "is_available", None) is not None:
+        if mps_backend.is_available():
+            return "mps"
     return "cpu"
 
 
