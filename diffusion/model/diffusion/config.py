@@ -14,20 +14,20 @@ class DataConfig:
 @dataclass(frozen=True)
 class AutoencoderConfig:
     ckpt_path: str = "results/ldm_ae_last.pt"
-    base_channels: int = 128
+    base_channels: int = 64
     latent_channels: int = 4
     downsample_factor: int = 8
     kl_weight: float = 1e-6
     lr: float = 2e-4
-    batch_size: int = 128
-    epochs: int = 1
+    batch_size: int = 64
+    epochs: int = 10
 
 
 @dataclass(frozen=True)
 class DiTConfig:
     patch_size: int = 1
     hidden_size: int = 512
-    depth: int = 12
+    depth: int = 8
     num_heads: int = 8
     mlp_ratio: float = 4.0
     use_checkpointing: bool = False
@@ -48,9 +48,9 @@ class TrainConfig:
     seed: int = 42
     image_size: int = 128
     in_channels: int = 3
-    batch_size: int = 128
-    effective_batch_size: int = 128
-    epochs: int = 10
+    batch_size: int = 96
+    effective_batch_size: int = 96
+    epochs: int = 50
     lr: float = 1e-4
     ema_decay: float = 0.9999
     grad_clip_norm: float = 1.0
