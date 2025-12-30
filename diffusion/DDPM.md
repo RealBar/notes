@@ -3,7 +3,7 @@
 
 论文在background部分给了大量信息，需要仔细推导
 ### 基础假设
-论文首先给出了Diffusion Model的表示
+论文在background部分给出了Diffusion Model的表示
 ```math
 p_\theta(\mathbf x_0)=\int p_\theta(\mathbf x_{0:T})d\mathbf x_{1:T}
 ```
@@ -23,7 +23,7 @@ q(\mathbf x_{1:T}|\mathbf x_0)=\prod _{t=1}^Tq(\mathbf x_t|\mathbf x_{t-1})
 > 马尔科夫性，假设后一个时刻的状态只跟前一个时刻的状态有关系，用公式表达即为 $p(x_t|x_{t-1},x_{t-2},...x_{0})=p(x_t|x_{t-1})$
 
 ### 前向过程假设
-此时论文给出了一项重要假设：前向过程的是一个增加标准差为 $\beta_t$ 的高斯噪声的过程：
+background部分论文给出了一项重要假设：前向过程的是一个增加标准差为 $\beta_t$ 的高斯噪声的过程：
 
 $$
 \begin{equation}
@@ -37,8 +37,8 @@ $$
 \mathbf x_{t} \sim \mathcal N(\sqrt{1-\beta_t}\mathbf x_{t-1},\beta_t\mathcal I)
 $$
 
-### 证据下界
-然后论文给出了训练过程中负对数似然上的证据下界，这里补充推导过程：
+### 证据下界和损失函数
+background部分论文给出了训练过程中负对数似然上的证据下界，这里补充推导过程：
 
 $$
 \log p_{\theta}(\mathbf x_0)=\log \int p_\theta(\mathbf x_{0:T})d\mathbf x_{1:T}\\
@@ -111,8 +111,14 @@ $$
 
 $$
 \sum_{t=1}^T\log \frac {q(\mathbf x_t|\mathbf x_0)} {q(\mathbf x_{t-1}|\mathbf x_0)}
-=\log \frac {q(\mathbf x_1|\mathbf x_0)} {q(\mathbf x_0|\mathbf x_0)} + \log \frac {q(\mathbf x_2|\mathbf x_0)} {q(\mathbf x_1|\mathbf x_0)} + \cdots + \log \frac {q(\mathbf x_T|\mathbf x_{0})} {q(\mathbf x_{T-1}|\mathbf x_0)}\\
-=\log \frac {q(\mathbf x_T|\mathbf x_0)} {q(\mathbf x_0|\mathbf x_0)}\\
+=\log \frac {q(\mathbf x_1|\mathbf x_0)} {q(\mathbf x_0|\mathbf x_0)} + \log \frac {q(\mathbf x_2|\mathbf x_0)} {q(\mathbf x_1|\mathbf x_0)} + \cdots + \log \frac {q(\mathbf x_T|\mathbf x_{0})} {q(\mathbf x_{T-1}|\mathbf x_0)}
+$$
+
+$$
+=\log \frac {q(\mathbf x_T|\mathbf x_0)} {q(\mathbf x_0|\mathbf x_0)}
+$$
+
+$$
 = \log q(\mathbf x_T|\mathbf x_0)
 $$
 
@@ -128,7 +134,7 @@ $$
 \end{equation}
 $$
 
-还记得我们上边说过的 $\Bbb E_q$ 真实的意义对 $x_{0:T}$ 这T+1个变量的联合分布的期望 $\Bbb E_{\mathbf x_{0:T}\sim q(\mathbf x_{0:T})}$ ，所以我们可以将其中的目标随机变量分离出来，写成两重期望的形式。如对于随机变量 $\mathbf x_t$ 
+还记得我们上边说过的 $\Bbb E_q$ 真实的意义对 $x_{0:T}$ 这T+1个变量的联合分布的期望 $\Bbb E_{\mathbf x_{0:T}\sim q(\mathbf x_{0:T})}$ ，所以我们可以将其中的目标随机变量分离出来，写成两重期望的形式。例如对于随机变量 $\mathbf x_t$ 
 
 $$
 \Bbb E_q=\Bbb E_{\mathbf x_{0:t-1,t+1:T}\sim q(\mathbf x_{0:t-1,t+1:T})}\big[\Bbb E_{\mathbf x_t\sim q(\mathbf x_t)}[\cdot]\big]
@@ -292,10 +298,9 @@ $$
 我们提炼几个重点：
 #### 训练
 - 训练过程是一个随机迭代过程，对于每个输入的数据只会训练一个随机的步数，这个步数从均匀分布中采样。
-- DDPM的模型核心是这个预测噪声的模型，它的输入是 $\mathbf x_t$ 和时间步 $t$，输出是噪声 $\hat\epsilon_t$ 。这个模型就是上图中的 $\epsilon_\theta$（图中把 $\mathbf x_t$ 用推导式展开了）。
-- 这个预测噪声的模型理论上可以是任何模型，只要它的输入是 $\mathbf x_t$ 和时间步 $t$，能输出一个维度和 $\mathbf x_t$ 一致的噪声 $\hat\epsilon_t$ 。不过在实践中一般用Unet或Transformer来做这个模型。
-- 可以这样理解训练过程，先随机采样一个步数，再从标准高斯分布中采样一个噪声 $\epsilon$ ，然后根据步数算一个混合比例（ $\sqrt{1-\bar\alpha_t},\sqrt {\bar \alpha_t}$ ）将 $\epsilon$ 和原始图像 $\mathbf x_0$ 混合（得到 $\mathbf x_{t}$ ），将混合后的图像和步数作为参数输入模型，要求模型输出尽量趋近于混入的纯噪声 $\epsilon$ 。
-    > 这个过程值得深入思考，一个模型能从任意比例的原图和噪声混合后信息中把噪声分离出来，那这个模型是不是其实也就学会了原图的分布？
+- DDPM的模型核心是这个预测噪声的模型，它的输入是 $\mathbf x_t$ 和时间步 $t$，输出是噪声 $\hat\epsilon_t$ 。这个模型就是上图中的 $\epsilon_\theta$（图中把 $\mathbf x_t$ 用推导式展开了）。这个预测噪声的模型理论上可以是任何模型，只要它的输入是 $\mathbf x_t$ 和时间步 $t$，能输出一个维度和 $\mathbf x_t$ 一致的噪声 $\hat\epsilon_t$ 。不过在实践中一般用Unet或Transformer来做这个模型。
+- 可以这样理解训练过程，先随机采样一个步数，再从标准高斯分布中采样一个噪声 $\epsilon$ ，然后根据步数算一个混合比例（ $\sqrt{1-\bar\alpha_t},\sqrt {\bar \alpha_t}$ ）将 $\epsilon$ 和原始图像 $\mathbf x_0$ 混合（得到 $\mathbf x_{t}$ ），将混合图像和步数作为参数输入模型，要求模型输出尽量趋近于混入的纯噪声 $\epsilon$ 。
+    > 这个过程值得深入思考，如果一个模型能从任意一张图像按照任意比例和噪声混合的带噪信息中把纯噪声分离出来，那这个模型是不是其实也就学会了原图的分布？
 #### 重构
 - 重构过程是一个顺序迭代过程，步数从T一直迭代到1。注意这里其实每次迭代其实都是采样，从上一步预测的高斯分布中进行采样，但是由于运用了重参数化技巧，看起来像迭代（增加噪声）。
 - 由于前向过程的后验分布 $q(\mathbf x_{t-1}|\mathbf x_t)$ 为高斯分布且 $x_T\sim\mathcal N(0,\mathcal I)$ ，那么从T步开始，每次从t步的高斯分布采样一个 $\mathbf x_t$ （重参数化）和时间步 $t$ 输入模型预测出噪声 $\hat\epsilon_t$  ，计算出 $\mathbf x_{t-1}$ 的高斯均值和方差，作为下一步t-1采样的高斯分布参数。重复以上过程，直到步数变成1，此时根据 $\mathbf x_1$ 和 $\hat\epsilon_1$ 计算出均值即可作为重构出的图像 $\mathbf x_0$ ，不需要计算方差了。
