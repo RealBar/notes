@@ -31,6 +31,24 @@ $$
 \end{equation}
 $$
 
+**为什么系数必须是 $\sqrt{1-\beta_t}$ 和 $\sqrt{\beta_t}$？**
+这个设计的核心目的是**保持方差守恒 (Variance Preserving)**，防止数据在加噪过程中方差爆炸或消失。
+假设输入数据 $\mathbf x_{t-1}$ 已经经过归一化，即均值为0，方差为 $\mathbf I$（$\text{Var}(\mathbf x_{t-1}) = 1$）。
+我们希望加噪后的 $\mathbf x_t$ 仍然保持单位方差，即 $\text{Var}(\mathbf x_t) = 1$。
+
+根据方差性质 $\text{Var}(aX + bY) = a^2\text{Var}(X) + b^2\text{Var}(Y)$（假设 $X, Y$ 独立），对于公式 $\mathbf x_t = a \cdot \mathbf x_{t-1} + b \cdot \epsilon_t$：
+
+$$
+\text{Var}(\mathbf x_t) = a^2 \underbrace{\text{Var}(\mathbf x_{t-1})}_{1} + b^2 \underbrace{\text{Var}(\epsilon_t)}_{1} = a^2 + b^2
+$$
+
+如果我们定义注入噪声的方差为 $\beta_t$（即 $b^2 = \beta_t \Rightarrow b = \sqrt{\beta_t}$），那么为了保持 $\text{Var}(\mathbf x_t) = 1$，必须有：
+
+$$
+a^2 + \beta_t = 1 \implies a = \sqrt{1-\beta_t}
+$$
+
+这就是为什么 $\mathbf x_{t-1}$ 前面的系数必须是 $\sqrt{1-\beta_t}$ 的原因。如果不乘这个系数，随着 $t$ 增大，数据的方差会变成 $1 + \sum \beta_t$，导致数值不稳定（Variance Exploding）。
 根据重参数化技巧，单步的前向过程可以写成一个高斯分布
 
 $$
