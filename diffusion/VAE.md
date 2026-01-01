@@ -28,23 +28,20 @@ $\theta^{best} = \displaystyle \arg\max_\theta \sum_{i=1}^n \log p_\theta(\mathb
 Unfortunately it is not easy to compute $p_\theta(\mathbf{x}^{(i)})$ in this way, as it is very expensive to check all the possible values of $\mathbf z$ and sum them up. To narrow down the value space to facilitate faster search, we would like to introduce a new approximation function to output what is a likely code given an input $\mathbf x$, $q_\phi(\mathbf{z}\vert\mathbf{x})$ parameterized by $\phi$.
 ![翁立莲的博客图片](/resource/vae_process_by_wenglilian.png)
 
-1. 为什么原来的 $p_\theta(\mathbf{z}|\mathbf{x})$ 不可解？根据贝叶斯公式：$
-p_\theta(\mathbf{z}|\mathbf{x}) = \frac{p_\theta(\mathbf{x}|\mathbf{z})p(\mathbf{z})}{\int p_\theta(\mathbf{x}|\mathbf{z})p(\mathbf{z})d\mathbf{z}}
-$ 它的难点在于分母的积分。要把所有可能的 $\mathbf{z}$ 都积一遍，这在高维空间是不可能的。所以我们不知道这个分布到底长什么样，更算不出它的概率密度值。
+1. 为什么原来的 $p_\theta(\mathbf{z}|\mathbf{x})$ 不可解？根据贝叶斯公式： $p_\theta(\mathbf{z}|\mathbf{x}) = \frac{p_\theta(\mathbf{x}|\mathbf{z})p(\mathbf{z})}{\int p_\theta(\mathbf{x}|\mathbf{z})p(\mathbf{z})d\mathbf{z}}$ 它的难点在于分母的积分。要把所有可能的 $\mathbf{z}$ 都积一遍，这在高维空间是不可能的。所以我们不知道这个分布到底长什么样，更算不出它的概率密度值。
 
-2. 为什么新引入的 $q_\phi(\mathbf{z}|\mathbf{x})$ 是可解的？因为 $q_\phi$ 是我们人为设计的。我们在设计模型时，会强制假设 $q_\phi(\mathbf{z}|\mathbf{x})$ 服从一个 已知且简单 的分布，最常见的就是高斯分布 ：$ q_\phi(\mathbf{z}|\mathbf{x}) = \mathcal{N}(\mathbf{z}; \mu_\phi(\mathbf{x}), \sigma^2_\phi(\mathbf{x})\mathcal{I}) $ 这里 $\mu_\phi(\mathbf{x})$ 和 $\sigma_\phi(\mathbf{x})$ 是由神经网络（Encoder）算出来的具体数值。因为我们假设它是高斯分布：
+2. 为什么新引入的 $q_\phi(\mathbf{z}|\mathbf{x})$ 是可解的？因为 $q_\phi$ 是我们人为设计的。我们在设计模型时，会强制假设 $q_\phi(\mathbf{z}|\mathbf{x})$ 服从一个已知且简单的分布，最常见的就是高斯分布： $q_\phi(\mathbf{z}|\mathbf{x}) = \mathcal{N}(\mathbf{z}; \mu_\phi(\mathbf{x}), \sigma^2_\phi(\mathbf{x})\mathcal{I})$ 这里 $\mu_\phi(\mathbf{x})$ 和 $\sigma_\phi(\mathbf{x})$ 是由神经网络（Encoder）算出来的具体数值。因为我们假设它是高斯分布：
     - 采样容易 ：我们可以轻松地从高斯分布里采样出 $\mathbf{z}$（重参数化技巧）。
     - 计算概率密度容易 ：我们可以直接套用高斯分布公式算出 $\log q_\phi(\mathbf{z}|\mathbf{x})$ 的值。
 3. 核心逻辑：把“计算问题”转化为“优化问题”。引入变分推断后，我们的思路变了：
-    - 以前（死胡同） ：试图硬算那个积分，求出真实的 $p_\theta(\mathbf{z}|\mathbf{x})$。$\rightarrow$ 算不出来。
+    - 以前（死胡同） ：试图硬算那个积分，求出真实的 $p_\theta(\mathbf{z}|\mathbf{x})$。 $\rightarrow$ 算不出来。
     - 现在（变分推断） ：既然算不出来，那我就在一个我熟悉的分布家族（比如高斯分布家族）里，找一个**长得最像**真实后验的分布。这就把问题转化为了一个 优化问题 ：调整神经网络 $\phi$ 的参数（也就是调整高斯分布的均值和方差），让 $q_\phi$ 和未知的 $p_\theta$ 之间的距离（KL 散度）最小。
 
 4. 妙在何处？（ELBO）
 你可能会问： “既然不知道真实的 $p_\theta$，怎么还能最小化它俩的距离呢？”
-这就是变分推断最精妙的地方。数学上可以推导出：$\log p_\theta(\mathbf{x}) - D_{KL}(q_\phi || p_\theta) = \text{ELBO}$ 
+这就是变分推断最精妙的地方。数学上可以推导出： $\log p_\theta(\mathbf{x}) - D_{KL}(q_\phi || p_\theta) = \text{ELBO}$ 
 最大化 ELBO（证据下界） 等价于最小化 KL 散度。
-而 ELBO 里的每一项：
-$$ \text{ELBO} = \mathbb{E} {q}[\log p \theta(\mathbf{x}|\mathbf{z})] - D_{KL}(q_\phi(\mathbf{z}|\mathbf{x}) || p(\mathbf{z})) $$
+而 ELBO 里的每一项： $\text{ELBO} = \mathbb{E} {q}[\log p \theta(\mathbf{x}|\mathbf{z})] - D_{KL}(q_\phi(\mathbf{z}|\mathbf{x}) || p(\mathbf{z}))$
 
 - $p_\theta(\mathbf{x}|\mathbf{z})$：是 Decoder（我们设计的，可算）。
 - $q_\phi(\mathbf{z}|\mathbf{x})$：是 Encoder 输出的高斯（我们设计的，可算）。
@@ -59,7 +56,7 @@ $$ \text{ELBO} = \mathbb{E} {q}[\log p \theta(\mathbf{x}|\mathbf{z})] - D_{KL}(q
 1. 先验分布 $p_\theta(\mathbf z)$ 为一个标准高斯分布（论文提及，此时的先验分布没有参数theta） $p(\mathbf z) = \mathcal N(\mathbf z;\bf 0,\bf I)$
 2. 似然分布（decoder） $p_\theta(\mathbf x|\mathbf z)$ 为一个高斯分布 $p_\theta(\mathbf x|\mathbf z) = \mathcal N(\mathbf x; \mu_\theta(\mathbf z), \sigma^2 \bf I)$（0-1数值情况下为伯努利分布），分布参数由z输入decoder模型估计得到。
 3. 真实的（不可解的）后验分布 $p_\theta(\mathbf z|\mathbf x)$ 为一个对角协方差矩阵的高斯分布（Gaussian with a diagonal covariance）
-4. 基于3才有了我们变分近似后验（encoder） $q_\phi(\mathbf z|\mathbf x)$ 也是一个对角协方差矩阵的高斯分布 $q_\phi(\mathbf z|\mathbf x^{(i)}) = \mathcal N(\mathbf z;\mu^{(i)},\sigma^{2(i)}\bf I)$ （注意原论文中这个写法其实不太对，因为把方差写成 $\sigma^2I$ 表示对角线都是同一个元素，表示各向同性高斯分布。而实际上我们用encoder生成的方差是一个向量，协方差矩阵的对角线是可以有不同值的，所以方差应该写成 $ \mathcal N(\mathbf z;\mu^{(i)},diag (\sigma^{2(i)}))$ ）
+4. 基于3才有了我们变分近似后验（encoder） $q_\phi(\mathbf z|\mathbf x)$ 也是一个对角协方差矩阵的高斯分布 $q_\phi(\mathbf z|\mathbf x^{(i)}) = \mathcal N(\mathbf z;\mu^{(i)},\sigma^{2(i)}\bf I)$ （注意原论文中这个写法其实不太对，因为把方差写成 $\sigma^2I$ 表示对角线都是同一个元素，表示各向同性高斯分布。而实际上我们用encoder生成的方差是一个向量，协方差矩阵的对角线是可以有不同值的，所以方差应该写成 $\mathcal N(\mathbf z;\mu^{(i)},diag (\sigma^{2(i)}))$）
 > 注意，神经网络**不能**直接表示一个概率分布，因为神经网络只能表示一个输入到输出的确定性映射，无法表示一个随机变量的分布。这里的编码器部分的神经网络输出是一个高斯分布的均值和方差（实际是由两个线性层分别输出），再在这个高斯分布中采样得到z，这样的z才是一个随机变量。所以不能简单地说神经网络就是encoder $q_\phi(z|x)$ 。
 同样的道理，decoder $p_\theta(x|z)$ 也不能直接用神经网络表示，神经网络输出的也是一个高斯分布的均值和方差，理论上也需要用这两个参数构建一个高斯分布，再在这个分布里采样才能得到输出的x'。但是实现上基本都简化了，我们只用神经网络输出均值，省略了方差，用均值直接当做采样输出了。
 
@@ -132,7 +129,8 @@ $$
 这里重点说一下重构误差项。原论文用SGVB估计器来估计这个重构误差项，还专门设计了一套AEVB的算法，其实就是重参数化+蒙特卡洛估计。但是很多代码实现中，重构误差项直接用MSE来估计，很多人这里都没讲清楚。网友的视频[6]中有提到，这个估计实际等于一个MSE，但并未给出原理推导。这里其实主要做了两步近似：
 
 1.  **蒙特卡洛估计 (Monte Carlo Estimation)**
-    将重构误差项的期望 $\mathbb{E}_{z \sim q_\phi(z|x)}[\dots]$ 通过采样近似。在 VAE 训练中，通常为了效率，单次采样的样本数 $L$ 设为 1：
+    将重构误差项的期望 $\Bbb {E}_{z \sim q_\phi(z|x)}[\dots]$ 通过采样近似。在 VAE 训练中，通常为了效率，单次采样的样本数 $L$ 设为 1：
+
     $$
     \mathbb{E}_{z \sim q_\phi(z|x)}[-\log p_\theta(x|z)] \approx -\frac{1}{L}\sum_{l=1}^L \log p_\theta(x|z^{(l)}) \approx -\log p_\theta(x|z)
     $$
@@ -143,34 +141,44 @@ $$
 
     *   **情况一：高斯分布假设 $\rightarrow$ MSE Loss**
         假设数据 $x$ 是连续值（如实数值的图像像素），通常假设 $p_\theta(x|z)$ 服从各向同性的高斯分布：
+
         $$
         p_\theta(x|z) = \mathcal{N}(x; \mu_\theta(z), \sigma^2 \bf I)
         $$
+
         其中 $\mu_\theta(z)$ 是解码器神经网络的输出，$\sigma$ 是标准差。
         写出其对数似然函数（Log-Likelihood）：
+
         $$
         \log p_\theta(x|z) = \log \left( \frac{1}{(2\pi\sigma^2)^{D/2}} \exp\left( -\frac{\|x - \mu_\theta(z)\|^2}{2\sigma^2} \right) \right)
         $$
+
         展开对数项：
+
         $$
         = \underbrace{-\frac{D}{2}\log(2\pi) - D\log\sigma}_{\text{常数项 (Constant)}} - \frac{1}{2\sigma^2}\underbrace{\|x - \mu_\theta(z)\|^2}_{\text{平方误差 (SSE)}}
         $$
+        
         **关于 $\sigma$ 的假设**：
         理论上，$\sigma$ 确实可以是 Decoder 神经网络输出的一部分（即模型不仅预测均值 $\mu$，也预测方差 $\sigma$）。
         但在 VAE 的**大多数实际实现**中，为了简化模型和训练稳定性，我们通常做一个**简化假设**：假设 $\sigma$ 是一个所有数据点都共享的、固定的超参数（不随 $z$ 变化）。
         
         如果我们设定这个固定值为 $\sigma=1/\sqrt{2}$（这是一个很常见的工程设定），那么 $\frac{1}{2\sigma^2} = 1$，常数项也可以忽略。此时，最小化负对数似然（NLL）就完全等价于最小化均方误差（MSE）：
+        
         $$
         \mathbf{L}_{recon} = -\log p_\theta(x|z) \propto \|x - \mu_\theta(z)\|^2 = \|x - x_{recon}\|^2
         $$
+        
         这就是为什么很多代码直接使用 MSE 作为重构 Loss 的原因。
         *注意：如果你真的让网络去学习 $\sigma$，那么 MSE 前面会带有一个权重项，且 Loss 中会包含 $\log \sigma$ 项以防止 $\sigma$ 塌缩到 0。*
 
     *   **情况二：伯努利分布假设 $\rightarrow$ BCE Loss**
         如果数据是二值的（或者归一化到 [0, 1] 区间并视为概率），通常假设 $p_\theta(x|z)$ 服从多变量伯努利分布。此时推导出的重构 Loss 就是二元交叉熵损失（Binary Cross Entropy, BCE）。
+        
         $$
         \log p_\theta(x|z) = \sum_{i=1}^D [x_i \log y_i + (1-x_i) \log (1-y_i)]
         $$
+        
         其中 $y = \mu_\theta(z)$ 是解码器输出（经过 Sigmoid 激活）。
 
 
