@@ -56,7 +56,7 @@ Unfortunately it is not easy to compute $p_\theta(\mathbf{x}^{(i)})$ in this way
 1. 先验分布 $p_\theta(\mathbf z)$ 为一个标准高斯分布（论文提及，此时的先验分布没有参数theta） $p(\mathbf z) = \mathcal N(\mathbf z;\bf 0,\bf I)$
 2. 似然分布（decoder） $p_\theta(\mathbf x|\mathbf z)$ 为一个高斯分布 $p_\theta(\mathbf x|\mathbf z) = \mathcal N(\mathbf x; \mu_\theta(\mathbf z), \sigma^2 \bf I)$（0-1数值情况下为伯努利分布），分布参数由z输入decoder模型估计得到。
 3. 真实的（不可解的）后验分布 $p_\theta(\mathbf z|\mathbf x)$ 为一个对角协方差矩阵的高斯分布（Gaussian with a diagonal covariance）
-4. 基于3才有了我们变分近似后验（encoder） $q_\phi(\mathbf z|\mathbf x)$ 也是一个对角协方差矩阵的高斯分布 $q_\phi(\mathbf z|\mathbf x^{(i)}) = \mathcal N(\mathbf z;\mu^{(i)},\sigma^{2(i)}\bf I)$ （注意原论文中这个写法其实不太对，因为把方差写成 $\sigma^2I$ 表示对角线都是同一个元素，表示各向同性高斯分布。而实际上我们用encoder生成的方差是一个向量，协方差矩阵的对角线是可以有不同值的，所以方差应该写成 $\mathcal N(\mathbf z;\mu^{(i)},diag (\sigma^{2(i)}))$）
+4. 基于3才有了我们变分近似后验（encoder） $q_\phi(\mathbf z|\mathbf x)$ 也是一个对角协方差矩阵的高斯分布 $q_\phi(\mathbf z|\mathbf x^{(i)}) = \mathcal N(\mathbf z;\mu_\phi(\mathbf x^{(i)}),\sigma_\phi^2(\mathbf x^{(i)})\bf I)$ ，它的均值和方差由一个神经网络根据输入x来估计（注意原论文中这个写法其实不太对，因为把方差写成 $\sigma^2I$ 表示对角线都是同一个元素，表示各向同性高斯分布；而实际上我们用神经网络生成的方差是一个向量，协方差矩阵的对角线是可以有不同值的，所以方差应该写成 $\mathcal N(\mathbf z;\mu^{(i)},diag (\sigma^{2(i)}))$）
 > 注意，神经网络**不能**直接表示一个概率分布，因为神经网络只能表示一个输入到输出的确定性映射，无法表示一个随机变量的分布。这里的编码器部分的神经网络输出是一个高斯分布的均值和方差（实际是由两个线性层分别输出），再在这个高斯分布中采样得到z，这样的z才是一个随机变量。所以不能简单地说神经网络就是encoder $q_\phi(z|x)$ 。
 同样的道理，decoder $p_\theta(x|z)$ 也不能直接用神经网络表示，神经网络输出的也是一个高斯分布的均值和方差，理论上也需要用这两个参数构建一个高斯分布，再在这个分布里采样才能得到输出的x'。但是实现上基本都简化了，我们只用神经网络输出均值，省略了方差，用均值直接当做采样输出了。
 
@@ -65,8 +65,8 @@ Unfortunately it is not easy to compute $p_\theta(\mathbf{x}^{(i)})$ in this way
 
 所以我们可以比较清晰的看到在VAE中，两个模型encoder和decoder的作用都是用来得到高斯分布的参数：encoder输入的是真实数据，输出的是后验分布的均值和方差；decoder输入的是隐态z，输出的是似然分布的均值（和方差）。其中我们获取隐态数据z以及重构数据x'的动作都是**采样**实现的。
 总结一下整体的前向流程：
-1. 输入真实数据x，通过encoder得到近似后验分布的均值和方差 $\mu^{(i)},\sigma^{2(i)}$
-2. 从近似后验分布中采样得到隐态数据z $\mathbf{z}^{(i)} \sim \mathcal N(\mathbf z;\mu^{(i)},\sigma^{2(i)}\bf I)$
+1. 输入真实数据 $\mathbf x^{(i)}$ ，通过encoder得到近似后验分布的均值和方差 $\mu^{(i)},\sigma^{2(i)}$
+2. 从近似后验分布中采样得到隐态数据 $\mathbf{z}^{(i)} \sim \mathcal N(\mathbf z;\mu^{(i)},\sigma^{2(i)}\bf I)$
 3. 将z输入decoder得到似然分布的均值 $\mu_\theta(\mathbf z)$
 4. 从似然分布中采样得到重构数据 $\tilde {\mathbf{x}}^{(i)} \sim \mathcal N(\mathbf x;\mu_\theta(\mathbf z), \sigma^2 \bf I)$
 
@@ -123,17 +123,16 @@ $$
 L=D_{KL}(q_\phi(\mathbf z|\mathbf x)||p_\theta(\mathbf z)) + \Bbb E_{z\sim q_\phi}[-\log p_\theta(\mathbf x|\mathbf z)]
 $$
 
-第一项称为正则项，第二项称为重构误差。
-> 为什么KL散度是正则项？每个输入的数据都会产生一个独立的正态分布（均值和方差），重参数化后即加入了基于这个方差的噪声进行训练。训练过程肯定会逐渐让噪声归零，也就是会让方差趋近于0，这其实就回到了AE。为了避免这这种情况，我们需要加一个正则，让方差趋近于1，即让 $q_\phi$ 去逼近标准正态分布[3]。
+第一项称为正则项，第二项称为重构误差。正则项比较简单，因为两个分布 $q_\phi(\mathbf z|\mathbf x),p_\theta(\mathbf z)$ 都是高斯分布且参数都已知（先验是标准高斯，后验的均值和方差是encoder的输出），因此KL散度可以直接计算。
+> 为什么KL散度是正则项？每个输入的数据都会产生一个独立的正态分布（均值和方差），重参数化后即加入了基于这个方差的噪声进行训练。训练过程会逐渐让噪声归零，也就是会让方差趋近于0，这其实就回到了AE。为了避免这这种情况，我们需要加一个正则，让方差趋近于1，即让 $q_\phi$ 去逼近标准正态分布[3]。
 
 这里重点说一下重构误差项。原论文用SGVB估计器来估计这个重构误差项，还专门设计了一套AEVB的算法，其实就是重参数化+蒙特卡洛估计。但是很多代码实现中，重构误差项直接用MSE来估计，很多人这里都没讲清楚。网友的视频[6]中有提到，这个估计实际等于一个MSE，但并未给出原理推导。这里其实主要做了两步近似：
 
 1.  **蒙特卡洛估计 (Monte Carlo Estimation)**
-    将重构误差项的期望 $\Bbb {E}_{z \sim q_\phi(z|x)}[\dots]$ 通过采样近似。在 VAE 训练中，通常为了效率，单次采样的样本数 $L$ 设为 1：
+    将重构误差项的期望 $\Bbb E_{z \sim q_\phi(z|x)}[\cdots]$ 通过采样近似。在 VAE 训练中，通常为了效率，单次采样的样本数 $L$ 设为 1：
 
-    $$
-    \mathbb{E}_{z \sim q_\phi(z|x)}[-\log p_\theta(x|z)] \approx -\frac{1}{L}\sum_{l=1}^L \log p_\theta(x|z^{(l)}) \approx -\log p_\theta(x|z)
-    $$
+    $$\Bbb{E}_{z \sim q_\phi(z|x)}[-\log p_\theta(x|z)] \approx -\frac{1}{L}\sum_{l=1}^L \log p_\theta(x|z^{(l)}) \approx -\log p_\theta(x|z)$$
+
     其中 $z$ 是通过重参数化技巧 $z = \mu + \sigma \odot \epsilon$ 采样得到的。
 
 2.  **分布假设 (Distribution Assumption)**
@@ -142,43 +141,33 @@ $$
     *   **情况一：高斯分布假设 $\rightarrow$ MSE Loss**
         假设数据 $x$ 是连续值（如实数值的图像像素），通常假设 $p_\theta(x|z)$ 服从各向同性的高斯分布：
 
-        $$
-        p_\theta(x|z) = \mathcal{N}(x; \mu_\theta(z), \sigma^2 \bf I)
-        $$
+        $$p_\theta(x|z) = \mathcal{N}(x; \mu_\theta(z), \sigma^2 \bf I)$$
 
-        其中 $\mu_\theta(z)$ 是解码器神经网络的输出，$\sigma$ 是标准差。
+        其中 $\mu_\theta(z)$ 是解码器神经网络的输出， $\sigma$ 是标准差。
         写出其对数似然函数（Log-Likelihood）：
 
-        $$
-        \log p_\theta(x|z) = \log \left( \frac{1}{(2\pi\sigma^2)^{D/2}} \exp\left( -\frac{\|x - \mu_\theta(z)\|^2}{2\sigma^2} \right) \right)
-        $$
+        $$\log p_\theta(x|z) = \log \left( \frac{1}{(2\pi\sigma^2)^{D/2}} \exp\left( -\frac{\|x - \mu_\theta(z)\|^2}{2\sigma^2} \right) \right)$$
 
         展开对数项：
 
-        $$
-        = \underbrace{-\frac{D}{2}\log(2\pi) - D\log\sigma}_{\text{常数项 (Constant)}} - \frac{1}{2\sigma^2}\underbrace{\|x - \mu_\theta(z)\|^2}_{\text{平方误差 (SSE)}}
-        $$
-        
+        $$=\underbrace{-\frac{D}{2}\log(2\pi) - D\log\sigma}_{\text{常数项 (Constant)}} - \frac{1}{2\sigma^2}\underbrace{\|x - \mu_\theta(z)\|^2}_{\text{平方误差 (SSE)}}$$
+
         **关于 $\sigma$ 的假设**：
         理论上，$\sigma$ 确实可以是 Decoder 神经网络输出的一部分（即模型不仅预测均值 $\mu$，也预测方差 $\sigma$）。
         但在 VAE 的**大多数实际实现**中，为了简化模型和训练稳定性，我们通常做一个**简化假设**：假设 $\sigma$ 是一个所有数据点都共享的、固定的超参数（不随 $z$ 变化）。
         
-        如果我们设定这个固定值为 $\sigma=1/\sqrt{2}$（这是一个很常见的工程设定），那么 $\frac{1}{2\sigma^2} = 1$，常数项也可以忽略。此时，最小化负对数似然（NLL）就完全等价于最小化均方误差（MSE）：
-        
-        $$
-        \mathbf{L}_{recon} = -\log p_\theta(x|z) \propto \|x - \mu_\theta(z)\|^2 = \|x - x_{recon}\|^2
-        $$
-        
+        如果我们设定这个固定值为 $\sigma=1/\sqrt{2}$（这是一个很常见的工程设定），那么 $\frac{1}{2\sigma^2} = 1$，常数项也可以忽略。此时，最小化负对数似然就完全等价于最小化均方误差（MSE）：
+
+        $$\mathbf{L}_{recon} = -\log p_\theta(x|z)\propto\|x - \mu_\theta(z)\|^2 = \|x - x_{recon}\|^2$$
+
         这就是为什么很多代码直接使用 MSE 作为重构 Loss 的原因。
         *注意：如果你真的让网络去学习 $\sigma$，那么 MSE 前面会带有一个权重项，且 Loss 中会包含 $\log \sigma$ 项以防止 $\sigma$ 塌缩到 0。*
 
     *   **情况二：伯努利分布假设 $\rightarrow$ BCE Loss**
         如果数据是二值的（或者归一化到 [0, 1] 区间并视为概率），通常假设 $p_\theta(x|z)$ 服从多变量伯努利分布。此时推导出的重构 Loss 就是二元交叉熵损失（Binary Cross Entropy, BCE）。
-        
-        $$
-        \log p_\theta(x|z) = \sum_{i=1}^D [x_i \log y_i + (1-x_i) \log (1-y_i)]
-        $$
-        
+
+        $$\log p_\theta(x|z) = \sum_{i=1}^D [x_i \log y_i + (1-x_i) \log (1-y_i)]$$
+
         其中 $y = \mu_\theta(z)$ 是解码器输出（经过 Sigmoid 激活）。
 
 
