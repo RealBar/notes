@@ -1,4 +1,5 @@
 # VAE学习笔记
+>论文： https://arxiv.org/pdf/1312.6114
 ## 入门问题
 第一次看论文的时候其实是懵的：
 1.  $p_\theta(\mathcal z),p_\theta(\mathcal x|\mathcal z),p_\theta(\mathcal z|\mathcal x)$ 怎么理解，他们是同一个分布还是不同的分布？如果是不同分布为什么都用同一个下标 $\theta$？
@@ -82,28 +83,50 @@ L=D_{KL}(q_\phi(\mathcal z|\mathcal x)||p_\theta(\mathcal z)) + \Bbb E_{z\sim q_
 第一项称为正则项，第二项称为重构误差。
 > 为什么KL散度是正则项？每个输入的数据都会产生一个独立的正态分布（均值和方差），重参数化后即加入了基于这个方差的噪声进行训练。训练过程肯定会逐渐让噪声归零，也就是会让方差趋近于0，这其实就回到了AE。为了避免这这种情况，我们需要加一个正则，让方差趋近于1，即让 $q_\phi$ 去逼近标准正态分布[3]。
 
-这里重点说一下重构误差项。原论文用SGVB估计器来估计这个重构误差项，还专门设计了一套AEVB的算法，其实就是重参数化+蒙特卡洛估计。但是很多代码实现中，重构误差项直接用MSE来估计，很多人这里都没讲清楚。网友的视频[6]中有提到，这个估计实际等于一个MSE，但并未给出原理推导。这里其实主要做了两步近似
-1. 先把似然分布的期望用蒙特卡洛采样近似掉，
-```math
-\mathbb{E}_{z \sim q_\phi(z|x)}[-\log p_\theta(x|z)] \approx \frac{1}{L}\displaystyle \sum _{l=1}^L -\log p_\theta(x|z_l),\quad z_l\sim q_\phi(z|x)
-```
-2. 由于合理假设了似然分布是一个高斯分布，$p_\theta(\mathcal x|\mathcal z)=\mathcal N(\mathcal x; \mathcal \mu_\theta(\mathcal z), \mathcal \sigma^2_\theta I)$ ，可以根据最大似然估计推导：
-```math
-\theta^{best} 
-=\arg\max_\theta \log \prod _{l=1}^L p_\theta(\mathcal x|\mathcal z)\\
-=\arg\max_\theta \sum _{l=1}^L \log p_\theta(\mathcal x|\mathcal z)\\
-=\arg\max_\theta \sum _{l=1}^L \log \mathcal N(\mathcal x; \mathcal \mu_\theta(\mathcal z), \mathcal \sigma^2_\theta I)\\
-=\arg\max_\theta \sum _{l=1}^L \frac{1}{2}\log (2\pi\mathcal \sigma^2_\theta) + \frac{1}{2\mathcal \sigma^2_\theta}\| \mathcal x - \mathcal \mu_\theta(\mathcal z) \|^2
-```
-由于第一项是常数，
-```math
-\theta^{best} = \sum _{l=1}^L \frac{1}{2\mathcal \sigma^2_\theta}\| \mathcal x - \mathcal \mu_\theta(\mathcal z) \|^2
-```
-注意到，似然高斯分布的均值由decoder的神经网络输出决定，即 $\mathcal \mu_\theta(\mathcal z)=x_{recon}$ ，且方差可以忽略为常数，所以可以写为：
-```math
-\theta^{best} \varpropto \| \mathcal x - \mathcal \mu_\theta(\mathcal z) \|^2\\
-=\| \mathcal x - \mathcal x_{recon}\|^2
-```
+这里重点说一下重构误差项。原论文用SGVB估计器来估计这个重构误差项，还专门设计了一套AEVB的算法，其实就是重参数化+蒙特卡洛估计。但是很多代码实现中，重构误差项直接用MSE来估计，很多人这里都没讲清楚。网友的视频[6]中有提到，这个估计实际等于一个MSE，但并未给出原理推导。这里其实主要做了两步近似：
+
+1.  **蒙特卡洛估计 (Monte Carlo Estimation)**
+    将重构误差项的期望 $\mathbb{E}_{z \sim q_\phi(z|x)}[\dots]$ 通过采样近似。在 VAE 训练中，通常为了效率，单次采样的样本数 $L$ 设为 1：
+    $$
+    \mathbb{E}_{z \sim q_\phi(z|x)}[-\log p_\theta(x|z)] \approx -\frac{1}{L}\sum_{l=1}^L \log p_\theta(x|z^{(l)}) \approx -\log p_\theta(x|z)
+    $$
+    其中 $z$ 是通过重参数化技巧 $z = \mu + \sigma \odot \epsilon$ 采样得到的。
+
+2.  **分布假设 (Distribution Assumption)**
+    我们需要显式定义解码器 $p_\theta(x|z)$ 的分布形式，这直接决定了重构损失的具体公式。
+
+    *   **情况一：高斯分布假设 $\rightarrow$ MSE Loss**
+        假设数据 $x$ 是连续值（如实数值的图像像素），通常假设 $p_\theta(x|z)$ 服从各向同性的高斯分布：
+        $$
+        p_\theta(x|z) = \mathcal{N}(x; \mu_\theta(z), \sigma^2 \mathbf{I})
+        $$
+        其中 $\mu_\theta(z)$ 是解码器神经网络的输出，$\sigma$ 是标准差。
+        写出其对数似然函数（Log-Likelihood）：
+        $$
+        \log p_\theta(x|z) = \log \left( \frac{1}{(2\pi\sigma^2)^{D/2}} \exp\left( -\frac{\|x - \mu_\theta(z)\|^2}{2\sigma^2} \right) \right)
+        $$
+        展开对数项：
+        $$
+        = \underbrace{-\frac{D}{2}\log(2\pi) - D\log\sigma}_{\text{常数项 (Constant)}} - \frac{1}{2\sigma^2}\underbrace{\|x - \mu_\theta(z)\|^2}_{\text{平方误差 (SSE)}}
+        $$
+        **关于 $\sigma$ 的假设**：
+        理论上，$\sigma$ 确实可以是 Decoder 神经网络输出的一部分（即模型不仅预测均值 $\mu$，也预测方差 $\sigma$）。
+        但在 VAE 的**大多数实际实现**中，为了简化模型和训练稳定性，我们通常做一个**简化假设**：假设 $\sigma$ 是一个所有数据点都共享的、固定的超参数（不随 $z$ 变化）。
+        
+        如果我们设定这个固定值为 $\sigma=1/\sqrt{2}$（这是一个很常见的工程设定），那么 $\frac{1}{2\sigma^2} = 1$，常数项也可以忽略。此时，最小化负对数似然（NLL）就完全等价于最小化均方误差（MSE）：
+        $$
+        \mathcal{L}_{recon} = -\log p_\theta(x|z) \propto \|x - \mu_\theta(z)\|^2 = \|x - x_{recon}\|^2
+        $$
+        这就是为什么很多代码直接使用 MSE 作为重构 Loss 的原因。
+        *注意：如果你真的让网络去学习 $\sigma$，那么 MSE 前面会带有一个权重项，且 Loss 中会包含 $\log \sigma$ 项以防止 $\sigma$ 塌缩到 0。*
+
+    *   **情况二：伯努利分布假设 $\rightarrow$ BCE Loss**
+        如果数据是二值的（或者归一化到 [0, 1] 区间并视为概率），通常假设 $p_\theta(x|z)$ 服从多变量伯努利分布。此时推导出的重构 Loss 就是二元交叉熵损失（Binary Cross Entropy, BCE）。
+        $$
+        \log p_\theta(x|z) = \sum_{i=1}^D [x_i \log y_i + (1-x_i) \log (1-y_i)]
+        $$
+        其中 $y = \mu_\theta(z)$ 是解码器输出（经过 Sigmoid 激活）。
+
 
 有视频说，VAE的损失函数其实就是这两个项之间的博弈：一方面，重构项缩小就要求噪声尽量低，就会让encoder输出的方差减少到0；而另一方面正则项要缩小就要求encoder输出的方差要趋近于1。这两个项相互博弈才让VAE找到一种平衡，能输出图片。
 ## 重参数化
