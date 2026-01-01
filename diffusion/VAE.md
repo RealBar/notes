@@ -178,28 +178,89 @@ $$
 
 理解一下，我们取z的过程是从某个分布中随机采样，这个过程呢在训练中无法求梯度，因为随机采样过程不可导。而重参数化就是为了解决这个问题，我们把这个随机采样的过程等价于一个确定性的函数 $g_\phi(\epsilon, \mathbf x)$ ，其中 $\epsilon$ 可以看成一个随机噪声，服从某个确定性分布 $p(\epsilon)$ 。
 
-## VAE和VB的关系
-我们的任务是计算后验概率 $P(z|\mathbf x)$ ，这叫做推断问题。这个问题有两个思路：
-1. 用一个确定的分布 $q(\mathbf z|\mathbf x)$ 去近似 $p(z|\mathbf x)$ ，这就是变分推断。
-2. 用MCMC等方法去采样 $p(z|\mathbf x)$ ，这就是MCMC推断。
+## VAE 与变分贝叶斯推断 (Variational Bayes Inference, VI) 的关系
 
-变分推断也叫变分贝叶斯推断(VB,VBI)，它的本质是把推断问题转化成优化问题：在一个函数族 $\mathbf F$ 中寻找一个相对简单的分布 $q(\mathbf z|\mathbf x)$ 去近似 $p(z|\mathbf x)$ ，想让他们之间的KL散度 $D_{KL}(q(\mathbf z|\mathbf x)||P(z|\mathbf x))$ 最小，由此引出ELBO，将问题转化成求一个函数 $q(\mathbf z|\mathbf x)$ 使ELBO最大。
+在统计推断中，核心任务往往是计算潜变量的后验分布 $p_\theta(\mathbf{z}|\mathbf{x})$ 一般称为推断任务。针对这一不可解问题，主要存在两大类推断框架：
+1.  **蒙特卡洛推断 (Monte Carlo Inference)**: 通过构建马尔可夫链来从目标分布中采样（如 MCMC, Gibbs Sampling）。这类方法理论上是无偏的，且随时间收敛到精确解，但计算开销巨大，难以扩展到大规模数据集。
+2.  **变分推断 (Variational Inference, VI)**: 将推断问题转化为优化问题。寻找一个变分分布族 $\mathcal{Q}$ 中的最优分布 $q^*(\mathbf{z})$ 来近似真实后验。
 
-变分推断最常用的方法叫Mean-Field，也叫MFVB。此外还有Black Box Variational Inference等方法。这两个在VAE论文中都有所提及（主要是MFVB）。
->  The variational Bayesian (VB) approach involves the optimization of an approximation to the intractable posterior. Unfortunately, the common mean-field approach requires analytical solutions of expectations w.r.t. the approximate posterior, which are also intractable in the general case.
+VAE 正是建立在**变分推断**的理论基础之上，但它对传统方法做出了突破性的改进。
 
-> Note that in contrast with the approximate posterior in mean-field variational inference, it is not necessarily factorial and its parameters φ are not computed from some closed-form expectation. Instead, we’ll introduce a method for learning the recognition model parameters φ jointly with the generative model parameters θ.
+### 1. 传统变分推断
 
-> Classical mean-field VB assumes a factorized approximate posterior followed by a closed form optimization updates (which usually required conjugate priors).——来自另一篇综述论文[2]
+在 VAE 出现之前，变分推断主要依赖 **平均场假设 (Mean-Field Assumption)** 和 **坐标上升法 (Coordinate Ascent)** 来求解。
 
-> 补充知识：
-> - Classical mean-field VB assumes a factorized approximate posterior 这句话中的factorized指的是 $q(\mathbf z)$ 是分解形式，即 $q(\mathbf z) = \prod_{i=1}^d q(z_i)$ ，其中 $z_i$ 是 $z$ 的第 $i$ 个维度（类似朴素贝叶斯的条件独立假设），这也是MFVB的核心假设。
-> - 闭式解（Closed-Form Solution），即能用数学公式直接写出最优解（如通过求导得到解析表达式），而非依赖数值迭代（如梯度下降）。
+**核心思想**：
+既然真实的后验 $p(\mathbf{z}|\mathbf{x})$ 难以计算，我们就在一个受限的分布族 $\mathcal{Q}$ 中寻找一个最优分布 $q^*(\mathbf{z})$ 来近似它。为了使问题可解，我们通常假设 $q(\mathbf{z})$ 满足**平均场假设**，即潜变量的各个维度是相互独立的：
+$$
+q(\mathbf{z}) = \prod_{j=1}^M q_j(z_j)
+$$
+这一假设将一个复杂的高维优化问题分解成了 $M$ 个一维优化问题。
 
-由此可以看出，ELBO概念以及用q去近似p(z|x)这个想法，都是VB所提出的，VAE只是借用。VAE真正的创新在在于：
-1. 摒弃了MF方法，使用一个不需要解析解和因子分解假设的优化方法，用一个全局编码器网络作为q，相较于MFVB的每个隐变量维度单独进行优化，VAE的优化目标是全局的。
+**求解方法：坐标上升变分推断 (CAVI)**
+基于平均场假设，我们可以通过 **Coordinate Ascent Variational Inference (CAVI)** 算法迭代求解。
+CAVI 的核心目标依然是**最大化 ELBO**。在平均场假设下，ELBO 可以展开为关于每个 $q_j$ 的泛函。
+通过对 ELBO 求关于 $q_j$ 的偏导并令其为 0，我们可以推导出最优的 $q_j^*(z_j)$ 更新公式：
 
-2. 重参数化技巧
+$$
+\ln q_j^*(z_j) = \mathbb{E}_{i \neq j} [\ln p(\mathbf{x}, \mathbf{z})] + \text{const}
+$$
+
+这意味着，只要模型采用了**共轭先验 (Conjugate Priors)**（如指数族分布），我们就可以推导出 $q_j^*(z_j)$ 的**闭式解 (Closed-form solution)**。
+**注意**：传统 VI 同样是在优化 ELBO，只是优化手段是“坐标上升”而非 VAE 的“梯度下降”。
+> **共轭先验 (Conjugate Prior)** 指的是这样一种先验分布：
+当它与似然函数（Likelihood）相乘计算后验分布时，得到的**后验分布与先验分布属于同一个分布家族**。
+**公式表达**：
+$\text{Posterior} \propto \text{Likelihood} \times \text{Prior}$ 如果 $\text{Prior} \in \mathcal{F}$ 且 $\text{Posterior} \in \mathcal{F}$（其中 $\mathcal{F}$ 是某个分布族，如高斯分布族、Beta 分布族），那么我们就说这个先验是该似然的**共轭先验**。
+**举例**：
+    1.  **Beta-Binomial 共轭**：
+    *   似然：二项分布 (Binomial) —— 比如抛硬币。
+    *   先验：Beta 分布。
+    *   结果：后验依然是 Beta 分布。
+    *   *好处*：计算极其简单，只需要把观测到的正面次数加到 Beta 分布的参数 $\alpha$ 上，反面次数加到 $\beta$ 上即可。
+    2.  **Gaussian-Gaussian 共轭**：
+    *   似然：高斯分布（已知方差，估计均值）。
+    *   先验：高斯分布。
+    *   结果：后验依然是高斯分布。
+**为什么重要？**
+在传统贝叶斯推断中，共轭先验能让我们**直接写出后验分布的解析解 (Closed-form solution)**，从而避免了复杂的积分运算。
+但在 VAE 这种深度学习模型中，似然函数由复杂的神经网络构成，不再具有共轭性质，所以才需要变分推断和重参数化技巧。
+
+**传统 VI 的局限性**：
+1.  **推导复杂**：需要针对特定模型手动推导每个 $q_j$ 的更新公式，一旦模型结构改变（如增加一层网络），所有公式都需要重新推导。
+2.  **依赖共轭**：强烈依赖共轭先验假设，限制了模型的表达能力，难以应用到非线性极强的深度神经网络中。
+3.  **计算昂贵**：CAVI 需要在整个数据集上进行迭代，或者针对每个新数据点重新运行迭代优化过程，无法像神经网络那样进行高效的 Batch 训练和单次前向推理。
+
+### 2. VAE 的创新
+#### Amortized Inference
+VAE 引入了 **摊销推断 (Amortized Inference)** 的思想，这是其与传统 VI 的根本区别。
+VAE 不再为数据集中的每一个样本 $\mathbf{x}^{(i)}$ 单独求解一组变分参数 $\phi^{(i)}$ ，而是训练一个**全局的推断网络 (Inference Network)**（即 Encoder）来预测这些参数：
+
+$$
+\phi^{(i)} = f_\phi(\mathbf{x}^{(i)})
+$$
+
+$$
+q_\phi(\mathbf{z}|\mathbf{x}^{(i)}) \approx p_\theta(\mathbf{z}|\mathbf{x}^{(i)})
+$$
+
+这里的 $\phi$ 是神经网络的权重，是被所有数据点共享的。
+*   **优势**：将推断的时间复杂度从迭代求解降低为一次前向传播 (Forward Pass)。
+*   **代价**：引入了**摊销差距 (Amortization Gap)**，即即便是最优的 Encoder 也可能无法完美拟合每个数据点的最优变分参数。
+
+#### SGVB Estimator
+为了在神经网络框架下进行端到端的梯度优化，VAE 摒弃了传统 VI 对共轭先验 (Conjugate Priors) 的依赖，提出了 **SGVB (Stochastic Gradient Variational Bayes)** 估计器。
+通过 **重参数化技巧 (Reparameterization Trick)**，将随机性从采样过程中剥离，使得梯度能够通过随机节点反向传播：
+
+$$
+\mathbf{z} = \mu_\phi(\mathbf{x}) + \sigma_\phi(\mathbf{x}) \odot \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})
+$$
+
+这使得我们可以直接对 ELBO 进行随机梯度下降 (SGD) 优化。
+#### 总结
+VAE 本质上是将 **深度学习 (Deep Learning)** 的强拟合能力与 **变分推断 (Variational Inference)** 的严谨数学框架相结合的产物。
+*   它保留了 VI 的核心目标：最大化 ELBO。
+*   它改进了 VI 的求解方式：用 Amortized Inference 替代 Mean-Field Update，用 SGVB 替代 Closed-form Update。
 ## 参考资料
 > [1] [VAE论文](https://arxiv.org/pdf/1312.6114)  
 > [2] [关于AE、VAE的一篇综述论文](https://arxiv.org/pdf/2003.05991)  
