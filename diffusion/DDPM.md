@@ -1,5 +1,6 @@
 # DDPM学习笔记
-> https://arxiv.org/pdf/2006.11239  
+>论文： https://arxiv.org/pdf/2006.11239  
+### 背景知识
 
 论文在background部分给了大量信息，需要仔细推导
 ### 基础假设
