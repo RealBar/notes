@@ -55,15 +55,25 @@ $$ \text{ELBO} = \mathbb{E} {q}[\log p \theta(\mathbf{x}|\mathbf{z})] - D_{KL}(q
 ## 模型拆解
 首先需要明确一点，VAE的论文正文的方法阐述部分并没有直接介绍encoder和decoder的具体模型，而是用p和q来表示这两个模型的分布，然后基于这两个分布提出了SGVB估计器和AEVB算法。
 
-在Example部分，作者使用了神经网络来估计encoder $q_\phi(z|x)$ 的，然后做了三个假设：
+在Example部分，作者使用了神经网络来估计encoder $q_\phi(z|x)$ 的，然后做了四个假设：
 1. 先验分布 $p_\theta(\mathbf z)$ 为一个标准高斯分布（论文提及，此时的先验分布没有参数theta） $p(\mathbf z) = \mathcal N(\mathbf z;\bf 0,\bf I)$
-2. 似然分布 $p_\theta(\mathbf x|\mathbf z)$ 为一个高斯分布 
-3. 真实的（不可解的）后验分布 $p_\theta(\mathbf z|\mathbf x)$ 为一个对角协方差矩阵的高斯分布（Gaussian with an approximately diagonal covariance），基于这个假设才有了我们用来近似它的 $q_\phi(\mathbf z|\mathbf x)$ 也是一个高斯分布 $q_\phi(\mathbf z|\mathbf x^{(i)}) = \mathcal N(\mathbf z;\mu^{(i)},\sigma^{2(i)}\bf I)$ （注意原论文中这个写法其实不太对，因为把方差写成 $\sigma^2I$ 表示对角线都是同一个元素，表示各向同性高斯分布。而实际上我们用encoder生成的方差是一个向量，协方差矩阵的对角线是可以有不同值的，所以方差应该写成 $ \mathcal N(\mathbf z;\mu^{(i)},diag (\sigma^{2(i)}))$ ）
+2. 似然分布（decoder） $p_\theta(\mathbf x|\mathbf z)$ 为一个高斯分布 $p_\theta(\mathbf x|\mathbf z) = \mathcal N(\mathbf x; \mu_\theta(\mathbf z), \sigma^2 \bf I)$（0-1数值情况下为伯努利分布），分布参数由z输入decoder模型估计得到。
+3. 真实的（不可解的）后验分布 $p_\theta(\mathbf z|\mathbf x)$ 为一个对角协方差矩阵的高斯分布（Gaussian with a diagonal covariance）
+4. 基于3才有了我们变分近似后验（encoder） $q_\phi(\mathbf z|\mathbf x)$ 也是一个对角协方差矩阵的高斯分布 $q_\phi(\mathbf z|\mathbf x^{(i)}) = \mathcal N(\mathbf z;\mu^{(i)},\sigma^{2(i)}\bf I)$ （注意原论文中这个写法其实不太对，因为把方差写成 $\sigma^2I$ 表示对角线都是同一个元素，表示各向同性高斯分布。而实际上我们用encoder生成的方差是一个向量，协方差矩阵的对角线是可以有不同值的，所以方差应该写成 $ \mathcal N(\mathbf z;\mu^{(i)},diag (\sigma^{2(i)}))$ ）
 > 注意，神经网络**不能**直接表示一个概率分布，因为神经网络只能表示一个输入到输出的确定性映射，无法表示一个随机变量的分布。这里的编码器部分的神经网络输出是一个高斯分布的均值和方差（实际是由两个线性层分别输出），再在这个高斯分布中采样得到z，这样的z才是一个随机变量。所以不能简单地说神经网络就是encoder $q_\phi(z|x)$ 。
 同样的道理，decoder $p_\theta(x|z)$ 也不能直接用神经网络表示，神经网络输出的也是一个高斯分布的均值和方差，理论上也需要用这两个参数构建一个高斯分布，再在这个分布里采样才能得到输出的x'。但是实现上基本都简化了，我们只用神经网络输出均值，省略了方差，用均值直接当做采样输出了。
 
 > 引自苏剑林博客：
 > ![苏剑林的vae结构](/resource/vae_struct_by_sujianlin.png)
+
+所以我们可以比较清晰的看到在VAE中，两个模型encoder和decoder的作用都是用来得到高斯分布的参数：encoder输入的是真实数据，输出的是后验分布的均值和方差；decoder输入的是隐态z，输出的是似然分布的均值（和方差）。其中我们获取隐态数据z以及重构数据x'的动作都是**采样**实现的。
+总结一下整体的前向流程：
+1. 输入真实数据x，通过encoder得到近似后验分布的均值和方差 $\mu^{(i)},\sigma^{2(i)}$
+2. 从近似后验分布中采样得到隐态数据z $\mathbf{z}^{(i)} \sim \mathcal N(\mathbf z;\mu^{(i)},\sigma^{2(i)}\bf I)$
+3. 将z输入decoder得到似然分布的均值 $\mu_\theta(\mathbf z)$
+4. 从似然分布中采样得到重构数据 $\tilde {\mathbf{x}}^{(i)} \sim \mathcal N(\mathbf x;\mu_\theta(\mathbf z), \sigma^2 \bf I)$
+
+注意在实际编码中，第4步常常被省略，直接用似然分布的均值作为重构数据。
 
 ## 证据下界(evidence lower bound, ELBO)
 $\log p_\theta(x)$ 的证据下界(ELBO)
@@ -134,7 +144,7 @@ $$
     *   **情况一：高斯分布假设 $\rightarrow$ MSE Loss**
         假设数据 $x$ 是连续值（如实数值的图像像素），通常假设 $p_\theta(x|z)$ 服从各向同性的高斯分布：
         $$
-        p_\theta(x|z) = \mathcal{N}(x; \mu_\theta(z), \sigma^2 \mathbf{I})
+        p_\theta(x|z) = \mathcal{N}(x; \mu_\theta(z), \sigma^2 \bf I)
         $$
         其中 $\mu_\theta(z)$ 是解码器神经网络的输出，$\sigma$ 是标准差。
         写出其对数似然函数（Log-Likelihood）：
