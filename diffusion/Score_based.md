@@ -1,21 +1,21 @@
 # Unified View of Diffusion and Score-based Models via SDEs
 
-> **核心参考文献**: 
-> - [Score-Based Generative Modeling through Stochastic Differential Equations (ICLR 2021)](https://arxiv.org/abs/2011.13456)
-> - [Denoising Diffusion Probabilistic Models (NeurIPS 2020)](https://arxiv.org/abs/2006.11239)
-> - [Generative Modeling by Estimating Gradients of the Data Distribution (NeurIPS 2019)](https://arxiv.org/abs/1907.05600)
-> - [A Connection Between Score Matching and Denoising Autoencoders (Neural Computation 2011)](https://www.researchgate.net/publication/220320057_A_Connection_Between_Score_Matching_and_Denoising_Autoencoders)
-> - [Reverse-time diffusion equation models (Stochastic Processes and their Applications 1982)](https://www.sciencedirect.com/science/article/pii/0304414982900515)
-> 
-> 本文旨在提供一个**统一的数学框架**，解释 Diffusion Model (如 DDPM) 和 Score-based Model (如 NCSN) 如何在 **随机微分方程 (SDE)** 的视角下被视为同一事物的不同面相。
+> 本文旨在提供一个**统一的数学框架**，解释 Diffusion Model (如 DDPM, DDIM)、Score-based Model (如 NCSN) 以及最新的 **Flow Matching** 如何在 **随机微分方程 (SDE)** 和 **常微分方程 (ODE)** 的视角下被视为同一事物的不同面相。
 
-## 1. 宏观图景：SDE 作为统一框架
+## 1. 宏观图景：SDE 与 ODE 作为统一框架
 
-传统的 Diffusion Model (DDPM) 是离散时间的，Score-based Model (NCSN) 也是离散的。如果我们将时间步数推向无穷 ($T \to \infty$)，这两个过程都会收敛到连续时间的 **SDE**。
+生成模型的核心任务是建立一个从简单噪声分布 $p_{prior}$ 到复杂数据分布 $p_{data}$ 的映射。
 
-在这个统一视角下，生成模型的核心思想分为两步：
-1.  **前向过程 (Forward Process)**：通过一个 SDE 将复杂的数据分布 $p_{data}$ 逐渐平滑地变成简单的噪声分布 $p_{prior}$ (通常是高斯)。
-2.  **逆向过程 (Reverse Process)**：通过求解逆向 SDE，将噪声分布 $p_{prior}$ 还原回数据分布 $p_{data}$。
+1.  **Diffusion / Score-based Models (SDE 视角)**：
+    *   **前向**：通过 SDE 将数据逐渐破坏为噪声。
+    *   **逆向**：通过逆向 SDE（需 Score）将噪声还原为数据。
+    *   **确定性路径**：每个 SDE 都有一个对应的 Probability Flow ODE。
+
+2.  **Flow Matching (ODE 视角)**：
+    *   **核心思想**：直接定义一个 ODE（向量场），将噪声分布平滑地推运 (Push-forward) 到数据分布。
+    *   **优势**：不再局限于扩散过程（高斯噪声），可以设计更直的轨迹（如 Optimal Transport 路径），从而实现更快、更稳定的采样。
+
+在这个统一视角下，**Flow Matching 可以看作是 Probability Flow ODE 的推广**。
 
 ---
 
@@ -109,9 +109,13 @@ $$
 $$
 d\mathbf{x} = [\mathbf{f}(\mathbf{x}, t) - \frac{1}{2}g(t)^2 \nabla_\mathbf{x} \log p_t(\mathbf{x})] dt
 $$
-*   这就是 **DDIM** 的连续形式。
-*   特点：没有随机项。给定初始噪声，生成结果是确定的。
-*   优势：可以使用黑盒 ODE 求解器（如 Runge-Kutta）来加速采样；可以进行 Latent Space 插值。
+*   **与 DDIM 的关系**：这个 Probability Flow ODE 正是 **DDIM** 在连续时间极限下的形式。
+    *   DDIM 的核心观察是：在 DDPM 的前向过程中，只要保证边缘分布 $q(\mathbf{x}_t|\mathbf{x}_0)$ 形式不变，中间的条件分布 $q(\mathbf{x}_t|\mathbf{x}_{t-1})$ 可以是非马尔可夫的，且可以去除随机性。
+    *   Probability Flow ODE 提供了相同的性质：它与原 SDE 共享相同的边缘分布 $p_t(\mathbf{x})$，但轨迹是确定性的。
+*   **特点**：
+    1.  **确定性**：给定初始噪声 $z_T$，生成的样本 $x_0$ 是唯一确定的。
+    2.  **一致性**：为 Latent Space 提供了一致的语义插值（Interpolation）能力。
+    3.  **加速采样**：由于是 ODE，可以使用高阶数值求解器（如 Runge-Kutta）以更大的步长进行采样，从而大幅减少采样步数（例如从 DDPM 的 1000 步减少到 DDIM 的 50 步）。
 
 ### 4.3 方式三：Langevin Dynamics (Corrector)
 Score-based model 独有的技巧。在求解 SDE 的每一步之后，可以额外运行几步 MCMC (Langevin Dynamics)：
@@ -120,6 +124,34 @@ $$
 $$
 *   作用：利用 Score 将当前样本“推”向概率密度更高的区域，纠正数值误差。
 *   这种 "Predictor-Corrector" 采样器通常能获得更高质量的样本。
+
+### 4.4 进阶：Flow Matching (ODE Generalization)
+
+**背景**：
+Diffusion Models 的 Probability Flow ODE 虽然是确定性的，但其轨迹通常是弯曲的（因为必须遵循扩散过程的边缘分布）。
+能不能直接设计一条**更直、更简单**的 ODE 轨迹，从噪声 $p_0$ 映射到数据 $p_1$？
+
+**Flow Matching 核心思想**：
+1.  **定义目标概率路径 (Target Probability Path)** $p_t(\mathbf{x})$：
+    我们不再受限于扩散过程，而是可以显式构造一个分布插值路径。例如 **Optimal Transport (OT) Path**：
+    $$ \mathbf{x}_t = (1-t)\mathbf{x}_0 + t\mathbf{x}_1 $$
+    其中 $\mathbf{x}_0 \sim \mathcal{N}(0, I)$，$\mathbf{x}_1 \sim p_{data}$。（注意时间定义通常与 Diffusion 相反，这里 $t=0$ 是噪声，$t=1$ 是数据）。
+
+2.  **定义向量场 (Vector Field)** $\mathbf{u}_t(\mathbf{x})$：
+    我们需要寻找一个向量场 $\mathbf{u}_t$，使得由它驱动的 ODE $d\mathbf{x}/dt = \mathbf{u}_t(\mathbf{x})$ 生成的概率流恰好等于我们定义的目标路径 $p_t$。
+    这等价于满足连续性方程 (Continuity Equation)：
+    $$ \frac{\partial p_t}{\partial t} + \nabla \cdot (p_t \mathbf{u}_t) = 0 $$
+
+3.  **训练目标 (Conditional Flow Matching)**：
+    直接回归向量场 $\mathbf{u}_t$ 很难。Flow Matching 证明了，我们可以通过回归**条件向量场** $\mathbf{u}_t(\mathbf{x}|\mathbf{z})$ 来简化训练：
+    $$ \mathcal{L}_{FM} = \mathbb{E}_{t, q(\mathbf{z}), p_t(\mathbf{x}|\mathbf{z})} \| \mathbf{v}_\theta(\mathbf{x}, t) - \mathbf{u}_t(\mathbf{x}|\mathbf{z}) \|^2 $$
+    对于 OT 路径，条件向量场极其简单：$\mathbf{u}_t(\mathbf{x}|\mathbf{x}_0, \mathbf{x}_1) = \mathbf{x}_1 - \mathbf{x}_0$。这意味着模型只需要学习预测**常数速度**！
+
+**与 Diffusion 的关系**：
+*   **Diffusion** 学习的是 Score $\nabla \log p_t$，对应的向量场是 $\mathbf{u}_t \propto \nabla \log p_t$。
+*   **Flow Matching** 直接学习向量场 $\mathbf{v}_\theta \approx \mathbf{u}_t$。
+*   当目标路径设定为 VP-SDE 的边缘分布时，Flow Matching 等价于 Diffusion Model。
+*   **优势**：Flow Matching 允许使用 **Optimal Transport** 路径，这种路径是直线的，因此在采样时数值误差更小，可以用更少的步数（Few-step Sampling）得到高质量结果。例如 **Stable Diffusion 3** 就采用了这种 Rectified Flow / Flow Matching 技术。
 
 ---
 
@@ -215,3 +247,12 @@ $$
 | **训练目标** | 预测噪声 $\epsilon_\theta$ | 预测分数 $s_\theta$ | $\epsilon_\theta \propto -s_\theta$ (线性等价) |
 | **采样(随机)** | Ancestral Sampling | Reverse SDE Solver | 本质相同 |
 | **采样(确定)** | DDIM | Probability Flow ODE | 本质相同 |
+
+## 参考
+> - [Flow Matching for Generative Modeling (ICLR 2023)](https://arxiv.org/abs/2210.02747)
+> - [Score-Based Generative Modeling through Stochastic Differential Equations (ICLR 2021)](https://arxiv.org/abs/2011.13456)
+> - [Denoising Diffusion Probabilistic Models (NeurIPS 2020)](https://arxiv.org/abs/2006.11239)
+> - [Denoising Diffusion Implicit Models (ICLR 2021)](https://arxiv.org/abs/2010.02502)
+> - [Generative Modeling by Estimating Gradients of the Data Distribution (NeurIPS 2019)](https://arxiv.org/abs/1907.05600)
+> - [A Connection Between Score Matching and Denoising Autoencoders (Neural Computation 2011)](https://www.researchgate.net/publication/220320057_A_Connection_Between_Score_Matching_and_Denoising_Autoencoders)
+> - [Reverse-time diffusion equation models (Stochastic Processes and their Applications 1982)](https://www.sciencedirect.com/science/article/pii/0304414982900515)
