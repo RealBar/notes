@@ -3,27 +3,42 @@
 ## 背景知识
 论文在background部分给了大量信息，需要仔细推导
 ### 基础假设
-论文在background部分给出了Diffusion Model的表示
-```math
+论文首先分给出了Diffusion Model的表示
+
+$$
 p_\theta(\mathbf x_0)=\int p_\theta(\mathbf x_{0:T})d\mathbf x_{1:T}
-```
-其中 $\mathbf x_0\sim q(\mathbf x_0)$ 表示现实数据， $\mathbf x_{1:T}=\mathbf x_1 ...\mathbf x_T$ 表示同维度的隐藏态
+$$
+
+其中 $\mathbf x_0\sim q(\mathbf x_0)$ 表示真实数据， $\mathbf x_{1:T}=\mathbf x_1 ...\mathbf x_T$ 表示同维度的隐态
 
 然后定义了前向过程(forward process)和反向过程(reverse process)。
 - 反向过程是 $p_\theta(\mathbf x_{0:T})$ ，可以理解成从一个高斯分布（prior distribution）到真实数据分布的还原过程
-- 前向过程也叫扩散过程（diffusion process）是p的后验近似 $q(\mathbf x_{1:T}|\mathbf x_0)$ ，可以理解成从真实数据到噪音的扩散过程
- 
-假设了q和p都是马尔科夫链，注意到p是反向的，q是正向的，贝叶斯展开后分别注意他们的条件序列时间
-```math
-p_{\theta}(\mathbf x_{0:T})=p_{\theta}(\mathbf x_0,\mathbf x_1,...\mathbf x_n)=p_\theta(\mathbf x_T)\prod_{t=1}^Tp_\theta（\mathbf x_{t-1}|\mathbf x_t）
-\\
+- 前向过程也叫扩散过程（diffusion process）是近似后验 $q(\mathbf x_{1:T}|\mathbf x_0)$ ，可以理解成从真实数据到噪音的扩散过程
+
+注意， $p_\theta$ 是带下标的，表示是通过模型估计的高斯分布； $q$ 是不带下标的，表示是准确的有解析解的分布。事实上这里的 $q$ 是我们设计的高斯分布，而且参数都是定义好的一串常数，下边小节会介绍。
+
+基础假设：p和q都是马尔科夫链，且都是高斯分布，且 $\mathbf x_T$ 服从标准高斯分布。注意到p是反向的，q是正向的，贝叶斯展开后分别注意他们的条件序列时间
+
+$$
+p_{\theta}(\mathbf x_{0:T})=p_{\theta}(\mathbf x_0,\mathbf x_1,...\mathbf x_T)=p(\mathbf x_T)\prod_{t=1}^Tp_\theta（\mathbf x_{t-1}|\mathbf x_t）
+其中 p(\mathbf x_T)\sim \mathcal N(0,\mathcal I)
+$$
+
+$$
 q(\mathbf x_{1:T}|\mathbf x_0)=\prod _{t=1}^Tq(\mathbf x_t|\mathbf x_{t-1})
-```
+$$
+
 这个就是马尔科夫性(Markov Property)在贝叶斯公式上的推导
 > 马尔科夫性，假设后一个时刻的状态只跟前一个时刻的状态有关系，用公式表达即为 $p(x_t|x_{t-1},x_{t-2},...x_{0})=p(x_t|x_{t-1})$
 
-### 前向过程假设
-background部分论文给出了一项重要假设：前向过程的是一个增加标准差为 $\beta_t$ 的高斯噪声的过程：
+### 前向过程设计
+紧接着论文给出了一项重要设计：前向过程时一个以前值为均值， $\beta_t$ 为方差的高斯分布：
+
+$$
+q(\mathbf x_t|\mathbf x_{t-1})=\mathcal N(\mathbf x_t;\sqrt{1-\beta_t}\mathbf x_{t-1},\beta_t\mathbf I)
+$$
+
+重参数化采样后，前向过程可以写成：
 
 $$
 \begin{equation}
@@ -31,10 +46,12 @@ $$
 \end{equation}
 $$
 
+**怎么理解前向过程是“设计”出来的？**
+在上一小节中，前向过程有两个重要假设：马尔科夫链以及最终结果 $\mathbf x_T$ 服从标准高斯分布，所以理论上前向过程可以被设计为任意满足这两个条件的分布。而这里作者选择使用以前值为均值， $\beta_t$ 为方差的高斯分布刚好满足了这两个条件。
+
 **为什么系数必须是 $\sqrt{1-\beta_t}$ 和 $\sqrt{\beta_t}$？**
 这个设计的核心目的是**保持方差守恒 (Variance Preserving)**，防止数据在加噪过程中方差爆炸或消失。
-假设输入数据 $\mathbf x_{t-1}$ 已经经过归一化，即均值为0，方差为 $\mathbf I$（$\text{Var}(\mathbf x_{t-1}) = 1$）。
-我们希望加噪后的 $\mathbf x_t$ 仍然保持单位方差，即 $\text{Var}(\mathbf x_t) = 1$。
+假设输入数据 $\mathbf x_{t-1}$ 已经经过归一化，即均值为0，方差为 $\mathbf I$ ，我们希望加噪后的 $\mathbf x_t$ 仍然保持单位方差，即 $\text{Var}(\mathbf x_t) = 1$ 。
 根据方差性质 $\text{Var}(aX + bY) = a^2\text{Var}(X) + b^2\text{Var}(Y)$（假设 $X, Y$ 独立），对于公式 $\mathbf x_t = a \cdot \mathbf x_{t-1} + b \cdot \epsilon_t$：
 
 $$
@@ -51,11 +68,20 @@ $$
 根据重参数化技巧，单步的前向过程可以写成一个高斯分布
 
 $$
-\mathbf x_{t} \sim \mathcal N(\sqrt{1-\beta_t}\mathbf x_{t-1},\beta_t\mathcal I)
+\mathbf x_{t} \sim \mathcal N(\sqrt{1-\beta_t}\mathbf x_{t-1},\beta_t\mathbf I)
 $$
 
+### 反向过程设计初步
+论文在background部分给出了反向过程的初步设计：它被定义为一个高斯分布，均值和方差都是通过模型 $\theta$ 来估计的： $\mu_\theta(\mathbf x_t,t)$ ， $\Sigma_\theta(\mathbf x_t,t)$ 
+
+$$
+p_\theta(\mathbf x_{t-1}|\mathbf x_t)\sim \mathcal N(\mathbf x_{t-1};\mu_\theta(\mathbf x_t,t),\Sigma_\theta(\mathbf x_t,t))
+$$
+
+我们的模型设计的最终目标是设计一套有效的均值和方差的计算方法。怎么设计呢？先从最大似然开始吧。
+
 ### 证据下界和损失函数初步
-background部分论文给出了训练过程中负对数似然上的证据下界，这里补充推导过程：
+论文直接给出了反向过程负对数似然的证据上界，这里补充推导过程：
 
 $$
 \log p_{\theta}(\mathbf x_0)=\log \int p_\theta(\mathbf x_{0:T})d\mathbf x_{1:T}\\
