@@ -54,3 +54,26 @@ $$
 \nabla \times \mathbf B = \mu_0 \mathbf J + \mu_0 \epsilon_0 \frac{\partial \mathbf E}{\partial t} \\
 \end{cases}
 $$
+
+### 莱布尼茨积分法则
+莱布尼兹积分法则(leibniz integral rule)也叫积分的微分规则，是数学中用来交换积分和微分运算顺序的方法。标准描述为：
+
+设函数 $f(x,t)$ 在及其偏导数 $\frac {\partial f(x,t)}{\partial x}$ 区间 $R=\{(x,t):a \le x \le b,c\le t \le d\}$ 上连续，函数 $\alpha(t), \beta(t)$ 在区间[c,d]上可导，且 $a\le \alpha(t)\le b, a\le \beta(t)\le b$ ，对于积分
+
+$$
+F(t) = \int_{\alpha(t)}^{\beta(t)}f(x,t)dx
+$$
+
+其导数为
+
+$$
+F'(t)=\int_{\alpha(t)}^{\beta(t)} \frac {\partial f(x,t)}{\partial t}dx + f(\beta (t),t)\beta '(t)-f(\alpha (t),t)\alpha '(t)
+$$
+
+这是一般形式，如果积分区域与函数变量无关（固定区间或者全空间），其表达形式可简化为：
+
+$$
+\frac {d}{dt}\int f(x,t)dx=\int \frac {d f(x,t)}{dt}dx
+$$
+
+使用莱布尼兹积分法则一定要注意前提条件：函数和偏导数连续
