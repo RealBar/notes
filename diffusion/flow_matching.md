@@ -114,7 +114,7 @@ $$
 \end{equation}
 $$
 
-先证(4)，令 $h(x,t)=v_t(x;\theta) \nabla_\theta v_t(x;\theta)$ ，则有
+先证(4)式，令 $h(x,t)=v_t(x;\theta) \nabla_\theta v_t(x;\theta)$ ，则有
 
 $$
 (4)式左边=\Bbb E_{t,p_t(x)}[h(x,t)]=\Bbb E_t\int h(x,t)p_t(x)dx
@@ -126,10 +126,7 @@ $$
 (4)式左边=\Bbb E_t\int h(x,t)\int q(x_1)p_t(x|x_1)dx_1dx=\Bbb E_{t,x\sim p_t(x|x_1),x_1\sim q(x_1)}[h(x,t)]=(4)式右边
 $$
 
-所以(4)式得证。
-
-下面证明(5)式
-
+所以(4)式得证。下面证明(5)式
 
 $$
 (5)式左边=\Bbb E_t\int u_t(x)\nabla_\theta v_t(x;\theta)p_t(x)dx
@@ -159,4 +156,4 @@ $$
 =\Bbb E_{t,x \sim p_t(x|x_1),x_1 \sim q(x_1)}[u_t(x|x_1)\nabla v_t(x;\theta)]=(5)式右边
 $$
 
-(4),(5)式均得证，所以原命题得证
+(4)式、(5)式均得证，所以原命题得证
