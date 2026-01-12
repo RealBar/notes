@@ -82,6 +82,11 @@ F'(t)=\int_{\alpha(t)}^{\beta(t)} \frac {\partial f(x,t)}{\partial t}dx + f(\bet
 $$
 
 ### 富比尼定理（Fubini's theorem）
+它的核心作用是：在满足f(x,y)在A,B上可积的条件下，允许我们将一个“重积分”转化为“累次积分”（或称迭代积分），或者可以交换积分的顺序而不改变结果。
+
+$$
+\iint_{A\times B} f(x,y)dxdy = \int_A (\int_B f(x,y)dy )dx=\int_B (\int_A f(x,y)dx )dy
+$$
 
 ### 连续性方程
 概率形式的连续性方程如（flow matching 中，u是向量场，p是概率密度）：
