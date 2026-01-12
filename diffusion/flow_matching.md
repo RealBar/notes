@@ -70,9 +70,8 @@ $$
 u_t(x)=\int u_t(x|x_1)\frac {p_t(x|x_1)q(x_1)} {p_t(x)}  dx_1
 $$
 
-即为(1)式
-
-### FM和CFM有相同的梯度
+原命题得证。
+### FM和CFM的梯度
 FM损失函数：
 
 $$
@@ -89,20 +88,25 @@ $$
 
 **证**:
 
-要证 $\nabla_{\theta} \Bbb E_{t,p_t(x)}\|v_t(x;\theta)-u_t(x)\|^2=\nabla_{\theta} \Bbb E_{t,x\sim p_t(x|x_1),x_1\sim q(x_1)}\|v_t(x;\theta)-u(x|x_1)\|^2$
-
-只需证 $ 2\Bbb E_{t,p_t(x)}[(v_t(x;\theta)-u_t(x))\nabla_{\theta} v_t(x;\theta)]=2\Bbb  E_{t,x\sim p_t(x|x_1),x_1\sim q(x_1)}[(v_t(x;\theta)-u_t(x|x_1))\nabla_{\theta} v_t(x;\theta)]$
-
-观察上式，等号左右期望内分别有两项，拆开后第一项显然相等，即
+要证 
 
 $$
-\Bbb E_{t,p_t(x)}[v_t \nabla_\theta v_t]=\Bbb E_{t,x\sim p_t(x|x_1),x_1\sim q(x_1)}[v_t \nabla_\theta v_t]
+\nabla_{\theta} \Bbb E_{t,p_t(x)}\|v_t(x;\theta)-u_t(x)\|^2=\nabla_{\theta} \Bbb E_{t,x\sim p_t(x|x_1),x_1\sim q(x_1)}\|v_t(x;\theta)-u(x|x_1)\|^2
 $$
 
-因为根据 $p_t(x)=\int q(x_1)p_t(x|x_1)dx_1$ ，有对于任意函数h(x)的期望 $\Bbb E_{t,p_t(x)}[h(x)]=\Bbb E_t\int h(x)p_t(x)dx=\Bbb E_t\int h(x)\int q(x_1)p_t(x|x_1)dx_1dx=\Bbb E_{t,x\sim p_t(x|x_1),x_1\sim q(x_1)}[h(x)]$
+只需证 
 
+$$
+2\Bbb E_{t,p_t(x)}[(v_t(x;\theta)-u_t(x))\nabla_{\theta} v_t(x;\theta)]=2\Bbb  E_{t,x\sim p_t(x|x_1),x_1\sim q(x_1)}[(v_t(x;\theta)-u_t(x|x_1))\nabla_{\theta} v_t(x;\theta)]
+$$
 
-所以只需证后一项相等，即只需证 
+只需证
+
+$$
+\begin{equation}
+\Bbb E_{t,p_t(x)}[(v_t(x;\theta)\nabla_{\theta} v_t(x;\theta))]=\Bbb  E_{t,x\sim p_t(x|x_1),x_1\sim q(x_1)}[v_t(x;\theta)\nabla_{\theta} v_t(x;\theta)]
+\end{equation}
+$$
 
 $$
 \begin{equation}
@@ -110,14 +114,31 @@ $$
 \end{equation}
 $$
 
+先证(4)，令 $h(x,t)=v_t(x;\theta) \nabla_\theta v_t(x;\theta)$ ，则有
+
 $$
-(4)式左边=\Bbb E_t\int u_t(x)\nabla_\theta v_t(x;\theta)p_t(x)dx
+(4)式左边=\Bbb E_{t,p_t(x)}[h(x,t)]=\Bbb E_t\int h(x,t)p_t(x)dx
+$$
+
+因为根据 $p_t(x)=\int q(x_1)p_t(x|x_1)dx_1$ ，代入上式得
+
+$$
+(4)式左边=\Bbb E_t\int h(x,t)\int q(x_1)p_t(x|x_1)dx_1dx=\Bbb E_{t,x\sim p_t(x|x_1),x_1\sim q(x_1)}[h(x,t)]=(4)式右边
+$$
+
+所以(4)式得证。
+
+下面证明(5)式
+
+
+$$
+(5)式左边=\Bbb E_t\int u_t(x)\nabla_\theta v_t(x;\theta)p_t(x)dx
 $$
 
 将(1)代入，得
 
 $$
-(4)式左边=\Bbb E_t\int (\int u_t(x|x_1)\frac {p_t(x|x_1)q(x_1)}{p_t(x)}dx_1)\nabla_\theta v_t(x;\theta)p_t(x)dx
+(5)式左边=\Bbb E_t\int (\int u_t(x|x_1)\frac {p_t(x|x_1)q(x_1)}{p_t(x)}dx_1)\nabla_\theta v_t(x;\theta)p_t(x)dx
 $$
 
 $$
@@ -135,7 +156,7 @@ $$
 $$
 
 $$
-=\Bbb E_{t,x \sim p_t(x|x_1),x_1 \sim q(x_1)}[u_t(x|x_1)\nabla v_t(x;\theta)]=(4)式右边
+=\Bbb E_{t,x \sim p_t(x|x_1),x_1 \sim q(x_1)}[u_t(x|x_1)\nabla v_t(x;\theta)]=(5)式右边
 $$
 
-原命题得证
+(4),(5)式均得证，所以原命题得证
