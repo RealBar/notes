@@ -20,3 +20,20 @@ pernicious
 美 [pərˈnɪʃəs]
 adj.有害的
 网络致命的；恶性的；有害无益的
+
+apostrophe
+美 [əˈpɑstrəfi]
+n.撇号；省字符；所有格符号；复数符号
+网络省略符号；单引号；省略号
+
+affine
+美 [ə'faɪn]
+adj.【数】远交的
+网络仿射；仿射的；变换和仿射
+
+invertible
+美 [ɪn'vɜrtɪbl]
+adj.可反转的；【化】可转化的
+网络可逆的；倒转的；可逆元
+
+Since ψt is a simple (invertible) affine map we can use equation 13 to solve for ut in a closed form.
